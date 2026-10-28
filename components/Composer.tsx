@@ -62,8 +62,9 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, onOpenJoin, o
   }, [sfxSearch]);
 
   function addFiles(fileList: FileList | File[]) {
-    if (!canSend || !fileList.length) return;
-    setFiles((current) => [...current, ...Array.from(fileList)]);
+    const selectedFiles = Array.from(fileList);
+    if (!canSend || !selectedFiles.length) return;
+    setFiles((current) => [...current, ...selectedFiles]);
   }
 
   async function submitMessage() {
