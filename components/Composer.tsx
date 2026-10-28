@@ -36,9 +36,10 @@ function formatDetectedCode(text: string): string {
   return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
 }
 
-export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, onNotify, onTyping, onPlaySfx }: {
+export function Composer({ canSend, sending, sfxCooldownRemaining, onOpenJoin, onSend, onUploadFile, onNotify, onTyping, onPlaySfx }: {
   canSend: boolean;
   sending: boolean;
+  sfxCooldownRemaining: number;
   onOpenJoin: () => void;
   onSend: (text: string, files: ChatFileAttachment[]) => Promise<boolean>;
   onUploadFile: (file: File, onProgress: (percentage: number) => void) => Promise<ChatFileAttachment>;
@@ -140,12 +141,12 @@ export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, o
       </div>
       <div className="composer-footer">
         <div className="sfx-picker">
-          <button type="button" className="sfx-trigger" aria-label="เปิดคลังเสียง" title="เล่น SFX ให้ทุกคนในห้องได้ยิน" aria-expanded={sfxOpen} disabled={!canSend || busy} onClick={() => setSfxOpen((open) => !open)}><Volume2 size={16} /><span>SFX</span></button>
+          <button type="button" className="sfx-trigger" aria-label="เปิดคลังเสียง" title={sfxCooldownRemaining ? `รออีก ${Math.ceil(sfxCooldownRemaining / 1000)} วินาที` : 'เล่น SFX ให้ทุกคนในห้องได้ยิน'} aria-expanded={sfxOpen} disabled={!canSend || busy} onClick={() => setSfxOpen((open) => !open)}><Volume2 size={16} /><span>SFX</span>{sfxCooldownRemaining > 0 && <small>{Math.ceil(sfxCooldownRemaining / 1000)}s</small>}</button>
           {sfxOpen && <section className="sfx-menu" aria-label="คลังเสียง">
-            <header className="sfx-menu-header"><div><strong>คลังเสียง</strong><small>กดเพื่อเล่นให้ทุกคนในห้อง</small></div><button type="button" aria-label="ปิดคลังเสียง" onClick={() => setSfxOpen(false)}><X size={15} /></button></header>
+            <header className="sfx-menu-header"><div><strong>คลังเสียง</strong><small>{sfxCooldownRemaining > 0 ? `เล่นเสียงถัดไปได้ใน ${Math.ceil(sfxCooldownRemaining / 1000)} วินาที` : 'กดเพื่อเล่นให้ทุกคนในห้อง'}</small></div><button type="button" aria-label="ปิดคลังเสียง" onClick={() => setSfxOpen(false)}><X size={15} /></button></header>
             <label className="sfx-search"><Search size={14} /><input autoFocus value={sfxSearch} onChange={(event) => setSfxSearch(event.target.value)} placeholder="ค้นหาเสียง…" /></label>
             <div className="sfx-list" role="listbox" aria-label="เสียงที่เลือกได้">
-              {visibleSfx.map((item) => <button type="button" role="option" aria-selected="false" className="sfx-option" key={item.id} style={{ '--sfx-accent': item.color || '#6967a8' } as React.CSSProperties} title={`เล่น ${item.name} ให้ทั้งห้อง`} onClick={() => onPlaySfx(item)}>
+              {visibleSfx.map((item) => <button type="button" role="option" aria-selected="false" className="sfx-option" key={item.id} style={{ '--sfx-accent': item.color || '#6967a8' } as React.CSSProperties} title={`เล่น ${item.name} ให้ทั้งห้อง`} disabled={sfxCooldownRemaining > 0} onClick={() => onPlaySfx(item)}>
                 <span className="sfx-option-emoji">{item.emoji}</span><span className="sfx-option-name">{item.name}</span><Volume2 size={13} className="sfx-option-play" />
               </button>)}
               {visibleSfx.length === 0 && <p className="sfx-empty">ไม่พบเสียงที่ค้นหา</p>}

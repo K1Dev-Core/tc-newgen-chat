@@ -19,6 +19,7 @@ import { uploadChatFile } from '@/lib/file-upload-client';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 const ROOM_SLUG = 'nok-phirab-sue-sarn';
+const SFX_COOLDOWN_MS = 3000;
 
 type MessageRow = {
   id: string;
@@ -95,6 +96,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [toastText, setToastText] = useState('');
   const [toastKey, setToastKey] = useState(0);
   const [activeSfx, setActiveSfx] = useState<{ item: RemoteSfxItem; sender: string; eventId: string } | null>(null);
+  const [sfxCooldownRemaining, setSfxCooldownRemaining] = useState(0);
   const [projectOpen, setProjectOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -106,6 +108,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const clientIdRef = useRef('');
   const sfxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSfxRef = useRef<string[]>([]);
+  const sfxCooldownUntilRef = useRef(0);
 
   useEffect(() => {
     clientIdRef.current = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -130,6 +133,12 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       window.removeEventListener('keydown', playPendingSfx);
     };
   }, []);
+
+  useEffect(() => {
+    if (!sfxCooldownRemaining) return;
+    const interval = setInterval(() => setSfxCooldownRemaining((remaining) => Math.max(0, remaining - 100)), 100);
+    return () => clearInterval(interval);
+  }, [sfxCooldownRemaining > 0]);
 
   function playSfx(item: RemoteSfxItem, sender: string, eventId: string) {
     if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
@@ -332,6 +341,13 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     if (!user || !displayName) { notify('เข้าร่วมแชทก่อนจึงจะส่งเสียงให้ทุกคนได้'); return; }
     const channel = typingChannelRef.current;
     if (!channel) { notify('กำลังเชื่อมต่อห้องแชท ลองอีกครั้ง'); return; }
+    const now = Date.now();
+    if (sfxCooldownUntilRef.current > now) {
+      notify(`รออีก ${Math.ceil((sfxCooldownUntilRef.current - now) / 1000)} วินาทีจึงจะเล่น SFX ได้`);
+      return;
+    }
+    sfxCooldownUntilRef.current = now + SFX_COOLDOWN_MS;
+    setSfxCooldownRemaining(SFX_COOLDOWN_MS);
     const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
     playSfx(item, displayName, eventId);
     const result = await channel.send({
@@ -450,7 +466,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
+      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
     </main>
     {activeSfx?.item.gif && <div key={activeSfx.eventId} className="sfx-stage" aria-hidden="true">
       <img src={activeSfx.item.gif} alt="" className="sfx-stage-gif" />
