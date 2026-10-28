@@ -48,6 +48,20 @@ function claimSfxEvent(eventId: string): boolean {
   }
 }
 
+function runSfxEventOnce(eventId: string, play: () => void) {
+  if (!eventId) return;
+  const claimAndPlay = () => {
+    if (claimSfxEvent(eventId)) play();
+  };
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    void navigator.locks.request(`tc-newgen:sfx:${eventId}`, { ifAvailable: true }, (lock) => {
+      if (lock) claimAndPlay();
+    }).catch(claimAndPlay);
+  } else {
+    claimAndPlay();
+  }
+}
+
 type MessageRow = {
   id: string;
   sender_id: string | null;
@@ -142,6 +156,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const sfxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sfxGifTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
+  const sfxGifUntilRef = useRef(0);
   const seenSfxEventsRef = useRef(new Set<string>());
   const sfxCooldownUntilRef = useRef(0);
 
@@ -170,7 +185,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, [sfxCooldownRemaining > 0]);
 
   function playSfx(item: RemoteSfxItem, sender: string, eventId: string) {
-    if (!eventId || seenSfxEventsRef.current.has(eventId) || !claimSfxEvent(eventId)) return;
+    if (!eventId || seenSfxEventsRef.current.has(eventId)) return;
     seenSfxEventsRef.current.add(eventId);
     if (seenSfxEventsRef.current.size > 200) {
       const oldestEvent = seenSfxEventsRef.current.values().next().value;
@@ -178,21 +193,27 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     }
     if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
     sfxTimeoutRef.current = null;
-    if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
-    sfxGifTimeoutRef.current = null;
     setActiveSfx({ item, sender, eventId });
     const displayDuration = Math.min(Math.max(item.holdMs ?? 3600, 1000), 10_000);
     sfxTimeoutRef.current = setTimeout(() => {
       setActiveSfx((current) => current?.eventId === eventId ? null : current);
       sfxTimeoutRef.current = null;
     }, displayDuration);
-    setActiveSfxGif(null);
-    if (item.gif) {
+    const now = Date.now();
+    if (item.gif && now >= sfxGifUntilRef.current) {
+      if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
       setActiveSfxGif({ item, sender, eventId });
+      sfxGifUntilRef.current = now + displayDuration;
       sfxGifTimeoutRef.current = setTimeout(() => {
-        setActiveSfxGif((current) => current?.eventId === eventId ? null : current);
-        sfxGifTimeoutRef.current = null;
+        setActiveSfxGif((current) => {
+          if (current?.eventId !== eventId) return current;
+          sfxGifUntilRef.current = 0;
+          sfxGifTimeoutRef.current = null;
+          return null;
+        });
       }, displayDuration);
+    } else if (item.gif) {
+      console.debug('[SFX] Ignored GIF overlay while another is still visible.', { eventId, activeUntil: sfxGifUntilRef.current });
     }
     // Stop any previous clip so broadcasts from different members cannot stack
     // and sound like one SFX was played repeatedly.
@@ -334,7 +355,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       if (sfx?.client_id && sfx.client_id === clientIdRef.current) return;
       const item = SFX_CATALOG.find((entry) => entry.id === sfx?.sfx_id);
       if (!item || !sfx.event_id || !sfx.sender_name) return;
-      playSfx(item, sfx.sender_name, sfx.event_id);
+      runSfxEventOnce(sfx.event_id, () => playSfx(item, sfx.sender_name, sfx.event_id));
     }).on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
@@ -377,6 +398,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       sfxTimeoutRef.current = null;
       if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
       sfxGifTimeoutRef.current = null;
+      sfxGifUntilRef.current = 0;
       if (sfxAudioRef.current) {
         sfxAudioRef.current.pause();
         sfxAudioRef.current.currentTime = 0;
@@ -447,7 +469,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     try { window.localStorage.setItem(SFX_COOLDOWN_KEY, String(sfxCooldownUntilRef.current)); } catch { /* keep cooldown in memory */ }
     setSfxCooldownRemaining(SFX_COOLDOWN_MS);
     const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-    playSfx(item, displayName, eventId);
+    runSfxEventOnce(eventId, () => playSfx(item, displayName, eventId));
     const result = await channel.send({
       type: 'broadcast',
       event: 'sfx',
