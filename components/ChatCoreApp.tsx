@@ -79,6 +79,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
   const [roomError, setRoomError] = useState('');
   const [toastText, setToastText] = useState('');
   const [toastKey, setToastKey] = useState(0);
@@ -328,7 +329,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
 
   async function sendMessage(text: string) {
     if (!user || !displayName || !roomId) return;
-    setActionLoading(true);
+    setSendingMessage(true);
     try {
       const { data, error } = await supabase.from('messages').insert({
         room_id: roomId,
@@ -344,7 +345,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       const message = toChatMessage(data as MessageRow, user.id);
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
     } finally {
-      setActionLoading(false);
+      setSendingMessage(false);
     }
   }
 
@@ -354,9 +355,9 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
+      <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
-    {(loading || profileLoading || actionLoading) && <LoadingOverlay label={actionLoading ? 'กำลังส่งข้อมูล…' : profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
+    {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />
   </div>;

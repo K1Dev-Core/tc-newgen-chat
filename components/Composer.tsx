@@ -1,7 +1,7 @@
 'use client';
 
 import { KeyboardEvent, FormEvent, useEffect, useRef, useState } from 'react';
-import { Paperclip, Send } from 'lucide-react';
+import { LoaderCircle, Paperclip, Send } from 'lucide-react';
 import hljs from 'highlight.js';
 
 function detectCodeLanguage(text: string): string | null {
@@ -34,9 +34,10 @@ function formatDetectedCode(text: string): string {
   return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
 }
 
-export function Composer({ displayName, canSend, onSetName, onSend, onNotify, onTyping }: {
+export function Composer({ displayName, canSend, sending, onSetName, onSend, onNotify, onTyping }: {
   displayName: string;
   canSend: boolean;
+  sending: boolean;
   onSetName: (name: string) => void;
   onSend: (text: string) => void;
   onNotify: (message: string) => void;
@@ -91,7 +92,7 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify, on
           setValue(nextValue);
           onTyping(Boolean(nextValue.trim()));
         }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'ใส่ชื่อก่อนเพื่อเริ่มส่งข้อความ'} rows={1} />
-        <button className="send-button" aria-label="ส่งข้อความ" title="ส่งข้อความ" disabled={!canSend || !value.trim()} onClick={submitMessage}><Send size={18} strokeWidth={1.8} /></button>
+        <button className="send-button" aria-label={sending ? 'กำลังส่งข้อความ' : 'ส่งข้อความ'} title={sending ? 'กำลังส่งข้อความ' : 'ส่งข้อความ'} disabled={!canSend || !value.trim() || sending} onClick={submitMessage}>{sending ? <LoaderCircle className="send-spinner" size={17} strokeWidth={2} /> : <Send size={18} strokeWidth={1.8} />}</button>
       </div>
       <div className="composer-footer">
         <button aria-label="แนบไฟล์" title="แนบไฟล์" disabled={!canSend} onClick={() => fileRef.current?.click()}><Paperclip size={16} /></button>
