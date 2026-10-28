@@ -41,7 +41,10 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
     setFlame(null);
     setCelebration(null);
 
-    const celebrationSeenKey = (date: string) => `tc-newgen:daily-flame-seen:${roomId}:${viewerId ?? 'guest'}:${date}`;
+    // v2 intentionally lets everyone see today's overlay once after this fix;
+    // older builds wrote the receipt as soon as the overlay started, so a
+    // missed/hidden overlay could permanently suppress it for the day.
+    const celebrationSeenKey = (date: string) => `tc-newgen:daily-flame-seen:v2:${roomId}:${viewerId ?? 'guest'}:${date}`;
     const showCelebrationIfUnseen = (row: FlameRow) => {
       const date = row.last_fueled_date;
       if (!date || date !== bangkokDate()) return;
@@ -53,11 +56,20 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
         pendingCelebrationRef.current = row;
         return;
       }
-      seenRef.current.add(seenKey);
-      try { window.localStorage.setItem(seenKey, 'seen'); } catch { /* In-memory receipt still prevents repeat overlays in this tab. */ }
+      if (celebrationTimerRef.current) return;
       setCelebration({ name: row.today_fueled_name ?? 'เพื่อนในห้อง', key: Date.now() });
-      if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
-      celebrationTimerRef.current = setTimeout(() => setCelebration(null), 10_000);
+      celebrationTimerRef.current = setTimeout(() => {
+        celebrationTimerRef.current = null;
+        setCelebration(null);
+        // Count it as seen only after the full overlay was actually visible.
+        // If the tab was backgrounded, let the next visible visit show it.
+        if (document.visibilityState === 'visible') {
+          seenRef.current.add(seenKey);
+          try { window.localStorage.setItem(seenKey, 'seen'); } catch { /* In-memory receipt still prevents repeats in this tab. */ }
+        } else {
+          pendingCelebrationRef.current = row;
+        }
+      }, 10_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
