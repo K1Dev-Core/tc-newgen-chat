@@ -45,13 +45,13 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
     // older builds wrote the receipt as soon as the overlay started, so a
     // missed/hidden overlay could permanently suppress it for the day.
     const celebrationSeenKey = (date: string) => `tc-newgen:daily-flame-seen:v2:${roomId}:${viewerId ?? 'guest'}:${date}`;
-    const showCelebrationIfUnseen = (row: FlameRow) => {
+    const showCelebrationIfUnseen = (row: FlameRow, force = false) => {
       const date = row.last_fueled_date;
       if (!date || date !== bangkokDate()) return;
       const seenKey = celebrationSeenKey(date);
       let alreadySeen = seenRef.current.has(seenKey);
       try { alreadySeen ||= window.localStorage.getItem(seenKey) === 'seen'; } catch { /* Keep this tab's in-memory receipt. */ }
-      if (alreadySeen) return;
+      if (alreadySeen && !force) return;
       if (document.visibilityState !== 'visible') {
         pendingCelebrationRef.current = row;
         return;
@@ -74,11 +74,24 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
       if (!alive) return;
+      const previousDate = latestRef.current?.last_fueled_date;
+      const isFirstFuelUpdateToday = row.last_fueled_date === bangkokDate() && previousDate !== row.last_fueled_date;
       latestRef.current = row;
       setFlame(row);
-      // Existing members get the realtime event, while people entering later
-      // that day get the same overlay from the persisted room flame record.
-      if (fromRealtime || row.last_fueled_date === bangkokDate()) showCelebrationIfUnseen(row);
+      // A transition into today's fuel date is the event everyone in the room
+      // should see, even if they previously saw the once-per-day entry overlay.
+      // Later updates to the same row are ignored to prevent duplicate overlays.
+      if (isFirstFuelUpdateToday) showCelebrationIfUnseen(row, true);
+      else if (!fromRealtime && row.last_fueled_date === bangkokDate()) showCelebrationIfUnseen(row);
+    };
+
+    const refreshFlameAfterMessage = () => {
+      void supabase.from('chat_flames').select('room_id,flame_count,last_fueled_date,today_fueled_name,last_message_at,updated_at')
+        .eq('room_id', roomId).maybeSingle().then(({ data, error }) => {
+          if (!alive) return;
+          if (error) console.error('[Flame] Realtime refresh failed.', { roomId, error });
+          else if (data) acceptRow(data as FlameRow, true);
+        });
     };
 
     const onVisibilityChange = () => {
@@ -98,7 +111,17 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
         if (!initialLoaded) pendingRealtimeRow = row;
         else acceptRow(row, true);
       },
-    ).subscribe();
+    ).on(
+      // Fallback to the room's message stream in case chat_flames is not
+      // enabled in the project's Realtime publication yet.
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+      refreshFlameAfterMessage,
+    ).subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.error('[Flame] Realtime subscription unavailable.', { roomId, status });
+      }
+    });
 
     void supabase.from('chat_flames').select('room_id,flame_count,last_fueled_date,today_fueled_name,last_message_at,updated_at')
       .eq('room_id', roomId).maybeSingle().then(({ data, error }) => {
