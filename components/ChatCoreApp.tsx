@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { Sidebar } from './Sidebar';
@@ -83,7 +83,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingActiveRef = useRef(false);
   const lastTypingBroadcastRef = useRef(0);
-  const clientId = useId().replaceAll(':', '');
+  const clientIdRef = useRef('');
+
+  useEffect(() => {
+    clientIdRef.current = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  }, []);
 
   function notify(message: string) {
     setToastText(message);
@@ -137,7 +141,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     let alive = true;
     const channel = supabase.channel(`chat-room:${roomId}`).on('broadcast', { event: 'typing' }, ({ payload }) => {
       const typing = payload as TypingPayload;
-      if (!typing?.client_id || typing.client_id === clientId || !typing.display_name) return;
+      if (!typing?.client_id || typing.client_id === clientIdRef.current || !typing.display_name) return;
 
       const existing = typingClientsRef.current.get(typing.client_id);
       if (existing) clearTimeout(existing.timeout);
@@ -192,7 +196,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, roomId, user?.id, clientId]);
+  }, [supabase, roomId, user?.id]);
 
   function broadcastTyping(isTyping: boolean) {
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -207,7 +211,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         void channel.send({
           type: 'broadcast',
           event: 'typing',
-          payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
+          payload: { client_id: clientIdRef.current, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
         });
       }
       return;
@@ -217,7 +221,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     const sendTyping = () => channel.send({
       type: 'broadcast',
       event: 'typing',
-      payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: true } satisfies TypingPayload,
+      payload: { client_id: clientIdRef.current, user_id: user.id, display_name: displayName, is_typing: true } satisfies TypingPayload,
     });
     if (Date.now() - lastTypingBroadcastRef.current >= 1000) {
       lastTypingBroadcastRef.current = Date.now();
@@ -230,7 +234,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       void channel.send({
         type: 'broadcast',
         event: 'typing',
-        payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
+        payload: { client_id: clientIdRef.current, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
       });
     }, 3000);
   }
