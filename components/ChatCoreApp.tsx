@@ -145,7 +145,6 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [toastText, setToastText] = useState('');
   const [toastKey, setToastKey] = useState(0);
   const [activeSfx, setActiveSfx] = useState<{ item: RemoteSfxItem; sender: string; eventId: string } | null>(null);
-  const [activeSfxGif, setActiveSfxGif] = useState<{ item: RemoteSfxItem; sender: string; eventId: string } | null>(null);
   const [sfxCooldownRemaining, setSfxCooldownRemaining] = useState(0);
   const [projectOpen, setProjectOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -157,9 +156,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const lastTypingBroadcastRef = useRef(0);
   const clientIdRef = useRef('');
   const sfxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sfxGifTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
-  const sfxGifUntilRef = useRef(0);
   const seenSfxEventsRef = useRef(new Set<string>());
   const sfxCooldownUntilRef = useRef(0);
 
@@ -175,10 +172,6 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       sharedClientId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
     }
     clientIdRef.current = sharedClientId;
-    SFX_CATALOG.filter((item) => item.gif).forEach((item) => {
-      const image = new Image();
-      image.src = item.gif!;
-    });
   }, []);
 
   useEffect(() => {
@@ -202,22 +195,6 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       setActiveSfx((current) => current?.eventId === eventId ? null : current);
       sfxTimeoutRef.current = null;
     }, displayDuration);
-    const now = Date.now();
-    if (item.gif && now >= sfxGifUntilRef.current) {
-      if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
-      setActiveSfxGif({ item, sender, eventId });
-      sfxGifUntilRef.current = now + displayDuration;
-      sfxGifTimeoutRef.current = setTimeout(() => {
-        setActiveSfxGif((current) => {
-          if (current?.eventId !== eventId) return current;
-          sfxGifUntilRef.current = 0;
-          sfxGifTimeoutRef.current = null;
-          return null;
-        });
-      }, displayDuration);
-    } else if (item.gif) {
-      console.debug('[SFX] Ignored GIF overlay while another is still visible.', { eventId, activeUntil: sfxGifUntilRef.current });
-    }
     // Stop any previous clip so broadcasts from different members cannot stack
     // and sound like one SFX was played repeatedly.
     if (sfxAudioRef.current) {
@@ -405,16 +382,12 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       typingClientsRef.current.clear();
       if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
       sfxTimeoutRef.current = null;
-      if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
-      sfxGifTimeoutRef.current = null;
-      sfxGifUntilRef.current = 0;
       if (sfxAudioRef.current) {
         sfxAudioRef.current.pause();
         sfxAudioRef.current.currentTime = 0;
         sfxAudioRef.current = null;
       }
       setActiveSfx(null);
-      setActiveSfxGif(null);
       typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
@@ -598,9 +571,6 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
     </main>
-    {activeSfxGif?.item.gif && <div key={activeSfxGif.eventId} className="sfx-stage" aria-hidden="true">
-      <img src={activeSfxGif.item.gif} alt="" className="sfx-stage-gif" />
-    </div>}
     {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
       <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>
       <span className="mini-sfx-sender">โดย {activeSfx.sender}</span>
