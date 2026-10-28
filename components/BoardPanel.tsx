@@ -28,6 +28,22 @@ type SaveState = 'loading' | 'ready' | 'saving' | 'saved' | 'error';
 type LiveCursor = { clientId: string; userId: string | null; name: string; avatarUrl: string | null; x: number; y: number; tool: 'pointer' | 'laser'; button: 'up' | 'down'; seenAt: number };
 type LiveElements = Parameters<NonNullable<ExcalidrawProps['onChange']>>[0];
 
+function mergeElements(current: LiveElements, incoming: LiveElements): LiveElements {
+  const merged = [...current];
+  const positions = new Map(merged.map((element, index) => [element.id, index]));
+  for (const element of incoming) {
+    const position = positions.get(element.id);
+    if (position === undefined) {
+      positions.set(element.id, merged.length);
+      merged.push(element);
+      continue;
+    }
+    const existing = merged[position];
+    if (element.version > existing.version || element.version === existing.version && element.versionNonce !== existing.versionNonce) merged[position] = element;
+  }
+  return merged;
+}
+
 export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, userName, avatarUrl, onJoin, onNotify }: {
   serverId: string;
   serverName: string;
@@ -52,6 +68,9 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
   const latestElementsRef = useRef<LiveElements>([]);
   const latestCursorRef = useRef<{ x: number; y: number; tool: 'pointer' | 'laser'; button: 'up' | 'down' } | null>(null);
   const remoteApplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const sceneSequenceRef = useRef(0);
+  const receivedSceneSequencesRef = useRef(new Map<string, number>());
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<(() => Promise<void>) | null>(null);
   const ignoreRemoteChangesRef = useRef(false);
@@ -90,7 +109,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
     if (!api) return;
     ignoreRemoteChangesRef.current = true;
     api.updateScene({
-      elements: scene.elements ?? [],
+      elements: mergeElements(api.getSceneElementsIncludingDeleted() as LiveElements, (scene.elements ?? []) as LiveElements),
       appState: { ...api.getAppState(), ...(scene.appState ?? {}) } as AppState,
     });
     if (scene.files) api.addFiles(Object.values(scene.files));
@@ -134,13 +153,16 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
       const clientId = (payload as { clientId?: string })?.clientId;
       if (clientId) setCollaborators((current) => { const next = new Map(current); next.delete(clientId as SocketId); return next; });
     }).on('broadcast', { event: 'scene' }, ({ payload }) => {
-      const update = payload as { clientId?: string; elements?: LiveElements };
+      const update = payload as { clientId?: string; sequence?: number; elements?: LiveElements };
       if (!update?.clientId || update.clientId === clientIdRef.current || !Array.isArray(update.elements)) return;
+      const lastSequence = receivedSceneSequencesRef.current.get(update.clientId) ?? 0;
+      if (update.sequence && update.sequence <= lastSequence) return;
+      if (update.sequence) receivedSceneSequencesRef.current.set(update.clientId, update.sequence);
       const api = apiRef.current;
       if (!api) return;
       if (remoteApplyTimerRef.current) clearTimeout(remoteApplyTimerRef.current);
       ignoreRemoteChangesRef.current = true;
-      api.updateScene({ elements: update.elements });
+      api.updateScene({ elements: mergeElements(api.getSceneElementsIncludingDeleted() as LiveElements, update.elements) });
       remoteApplyTimerRef.current = setTimeout(() => { ignoreRemoteChangesRef.current = false; }, 120);
     }).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -197,7 +219,10 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
-        void pendingSaveRef.current?.();
+        if (pendingSaveRef.current) {
+          const pendingSave = pendingSaveRef.current;
+          saveChainRef.current = saveChainRef.current.catch(() => undefined).then(pendingSave);
+        }
       }
       saveTimerRef.current = null;
       void supabase.removeChannel(channel);
@@ -212,13 +237,13 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
       liveSceneTimerRef.current = setTimeout(() => {
         liveSceneTimerRef.current = null;
         const channel = channelRef.current;
-        if (channel) void channel.send({ type: 'broadcast', event: 'scene', payload: { clientId: clientIdRef.current, elements: latestElementsRef.current } });
+        if (channel) void channel.send({ type: 'broadcast', event: 'scene', payload: { clientId: clientIdRef.current, sequence: ++sceneSequenceRef.current, elements: latestElementsRef.current } });
       }, 75);
     }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    setSaveState('saving');
     const save = async () => {
         try {
+          setSaveState('saving');
           // `database` serialization deliberately strips binary image files;
           // use `local` so the image data is persisted with its elements.
           const scene = JSON.parse((await import('@excalidraw/excalidraw')).serializeAsJSON(elements, appState, files, 'local')) as ExcalidrawInitialDataState;
@@ -252,7 +277,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
     pendingSaveRef.current = save;
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
-      void save();
+      saveChainRef.current = saveChainRef.current.catch(() => undefined).then(save);
     }, 700);
   }, [canEdit, userId, onNotify, supabase, serverId]);
 
