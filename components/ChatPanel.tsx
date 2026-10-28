@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import type { ChatMessage, ViewId } from '@/lib/types';
+import type { ChatMessage } from '@/lib/types';
 import { MessageContent } from './MessageContent';
 import type { MemberProfile } from './ProfileDialog';
 
-export function ChatPanel({ activeView, messages, typingNames, memberProfiles, onOpenProfile }: { activeView: ViewId; messages: ChatMessage[]; typingNames: string[]; memberProfiles: Record<string, MemberProfile>; onOpenProfile: (profile: MemberProfile) => void }) {
+export function ChatPanel({ roomName, messages, typingNames, memberProfiles, onOpenProfile }: { roomName: string; messages: ChatMessage[]; typingNames: string[]; memberProfiles: Record<string, MemberProfile>; onOpenProfile: (profile: MemberProfile) => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages.length]);
   const messageGroups: ChatMessage[][] = [];
@@ -31,7 +31,7 @@ export function ChatPanel({ activeView, messages, typingNames, memberProfiles, o
           ? `${typingNames[0]} กำลังพิมพ์`
           : '';
 
-  return <section className="conversation" aria-label={`Messages in #${activeView === 'Chat' ? 'chat' : 'server'}`}>
+  return <section className="conversation" aria-label={`Messages in #${roomName}`}>
     <div className="message-list group-message-list">
       {messageGroups.map((group) => {
         const message = group[0];

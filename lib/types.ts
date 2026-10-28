@@ -1,4 +1,5 @@
-export type ViewId = 'Server' | 'Chat';
+export type ChatServer = { id: string; name: string };
+export type ChatRoom = { id: string; server_id: string; slug: string; name: string };
 export type ChatMessage = {
   role: 'self' | 'friend';
   sender: string;

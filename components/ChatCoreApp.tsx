@@ -13,12 +13,12 @@ import { ProfileDialog } from './ProfileDialog';
 import { JoinChatDialog } from './JoinChatDialog';
 import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import type { ChatMessage, ViewId } from '@/lib/types';
+import type { ChatMessage, ChatRoom, ChatServer } from '@/lib/types';
 import { serializeChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 import { uploadChatFile } from '@/lib/file-upload-client';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
-const ROOM_SLUG = 'nok-phirab-sue-sarn';
+const DEFAULT_ROOM_SLUG = 'nok-phirab-sue-sarn';
 const SFX_COOLDOWN_MS = 30_000;
 
 type MessageRow = {
@@ -79,7 +79,9 @@ function SetupScreen() {
 }
 
 function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
-  const [activeView, setActiveView] = useState<ViewId>('Chat');
+  const [servers, setServers] = useState<ChatServer[]>([]);
+  const [rooms, setRooms] = useState<ChatRoom[]>([]);
+  const [activeRoomSlug, setActiveRoomSlug] = useState(DEFAULT_ROOM_SLUG);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
@@ -87,7 +89,9 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
   const [activeProfile, setActiveProfile] = useState<{ profile: MemberProfile; editable: boolean } | null>(null);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
-  const [roomId, setRoomId] = useState('');
+  const activeRoom = rooms.find((room) => room.slug === activeRoomSlug);
+  const activeServer = activeRoom ? servers.find((server) => server.id === activeRoom.server_id) : undefined;
+  const roomId = activeRoom?.id ?? '';
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -236,17 +240,41 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
 
   useEffect(() => {
     let alive = true;
-    void supabase.from('chat_rooms').select('id').eq('slug', ROOM_SLUG).single().then(({ data, error }) => {
+    void Promise.all([
+      supabase.from('servers').select('id,name').order('name'),
+      supabase.from('chat_rooms').select('id,server_id,slug,name').order('created_at'),
+    ]).then(([serverResult, roomResult]) => {
       if (!alive) return;
-      if (error || !data) {
-        setRoomError('ยังหา channel ไม่เจอ ตรวจว่าได้รัน migration ใน Supabase แล้ว');
+      if (serverResult.error || roomResult.error) {
+        setRoomError('โหลดรายการเซิร์ฟเวอร์ไม่สำเร็จ ตรวจ migration และสิทธิ์อ่านข้อมูลใน Supabase');
         setLoading(false);
         return;
       }
-      setRoomId(data.id);
+      const nextServers = (serverResult.data ?? []) as ChatServer[];
+      const nextRooms = (roomResult.data ?? []) as ChatRoom[];
+      setServers(nextServers);
+      setRooms(nextRooms);
+      if (!nextRooms.length) {
+        setRoomError('ยังไม่มีห้องแชทในฐานข้อมูล ตรวจ migration ใน Supabase');
+        setLoading(false);
+        return;
+      }
+      if (!nextRooms.some((room) => room.slug === activeRoomSlug)) {
+        setActiveRoomSlug(nextRooms[0].slug);
+      }
     });
     return () => { alive = false; };
   }, [supabase]);
+
+  function selectRoom(slug: string) {
+    if (slug === activeRoomSlug) { setMobileSidebarOpen(false); return; }
+    setLoading(true);
+    setRoomError('');
+    setMessages([]);
+    setTypingNames([]);
+    setActiveRoomSlug(slug);
+    setMobileSidebarOpen(false);
+  }
 
   useEffect(() => {
     if (!roomId) return;
@@ -484,11 +512,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
-    <Sidebar activeView={activeView} onNavigate={(view) => { setActiveView(view); setMobileSidebarOpen(false); }} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} projectOpen={projectOpen} onToggleProject={() => setProjectOpen((open) => !open)} />
+    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} onSelectRoom={selectRoom} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
-      <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
-      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
+      <Topbar serverName={activeServer?.name ?? ''} roomName={activeRoom?.name ?? ''} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
+      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
     </main>
     {activeSfxGif?.item.gif && <div key={activeSfxGif.eventId} className="sfx-stage" aria-hidden="true">
