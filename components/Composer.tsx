@@ -57,7 +57,7 @@ export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, o
   const busy = sending || uploading;
   const visibleSfx = useMemo(() => {
     const query = sfxSearch.trim().toLocaleLowerCase();
-    return SFX_CATALOG.filter((item) => !query || `${item.name} ${item.id}`.toLocaleLowerCase().includes(query)).slice(0, 100);
+    return SFX_CATALOG.filter((item) => !query || `${item.name} ${item.id}`.toLocaleLowerCase().includes(query));
   }, [sfxSearch]);
 
   function addFiles(fileList: FileList | File[]) {
@@ -149,7 +149,6 @@ export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, o
                 <span className="sfx-option-emoji">{item.emoji}</span><span className="sfx-option-name">{item.name}</span><Volume2 size={13} className="sfx-option-play" />
               </button>)}
               {visibleSfx.length === 0 && <p className="sfx-empty">ไม่พบเสียงที่ค้นหา</p>}
-              {visibleSfx.length === 100 && <small className="sfx-limit">แสดง 100 รายการแรก พิมพ์ค้นหาเพื่อหาเสียงอื่น</small>}
             </div>
           </section>}
         </div>
