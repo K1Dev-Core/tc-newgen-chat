@@ -1,7 +1,38 @@
 'use client';
 
 import { KeyboardEvent, FormEvent, useEffect, useRef, useState } from 'react';
-import { Code2, Paperclip, Send, X } from 'lucide-react';
+import { Paperclip, Send } from 'lucide-react';
+import hljs from 'highlight.js';
+
+function detectCodeLanguage(text: string): string | null {
+  const source = text.trim();
+  if (!source || /^\s*(`{3,}|~{3,})/.test(source)) return null;
+
+  try {
+    JSON.parse(source);
+    if (/^(?:\{|\[)/.test(source)) return 'json';
+  } catch {
+    // Continue with syntax detection for non-JSON text.
+  }
+
+  const hasHtmlTag = /<[^>]+>/.test(source);
+  const hasCallExpression = /^\s*(?:await\s+)?(?:new\s+)?[A-Za-z_$][\w$]*(?:\.[\w$]+)*\s*\([^)]*\)\s*;?\s*$/.test(source);
+  const hasStrongCodeSyntax = hasHtmlTag || hasCallExpression || /(?:=>|===?|!==?|&&|\|\||->|::|\b\w+\s*\([^\n]*\)\s*\{|^\s*(?:#!|#include\b|import\s+[\w{*]|from\s+[\w.]+\s+import\b|export\s+(?:default|const|function|class|type|interface)\b|(?:const|let|var)\s+[$\w]+\s*(?:=|:)|function\s+[$\w]+\s*\(|class\s+[$\w]+\b|def\s+\w+\s*\(|async\s+function\b|SELECT\b.+\bFROM\b|INSERT\s+INTO\b|CREATE\s+TABLE\b|UPDATE\s+\w+\s+SET\b|fn\s+\w+\s*\(|func\s+\w+\s*\(|package\s+\w+|use\s+[\w:]+;))/mi.test(source);
+  const lines = source.split('\n');
+  const codeShapedLines = lines.filter((line) => /^\s{2,}\S/.test(line)
+    || /[{};]$/.test(line.trim())
+    || /^\s*(?:if|else|for|while|switch|case|try|catch|return|break|continue)\b.*(?:\{|:|;)?\s*$/.test(line)).length;
+  const hasSeveralCodeLines = lines.length >= 2 && codeShapedLines >= 2;
+  if (!hasStrongCodeSyntax && !hasSeveralCodeLines) return null;
+
+  const result = hljs.highlightAuto(source);
+  return result.language && result.relevance >= 2 ? result.language : '';
+}
+
+function formatDetectedCode(text: string): string {
+  const language = detectCodeLanguage(text);
+  return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
+}
 
 export function Composer({ displayName, canSend, onSetName, onSend, onNotify, onTyping }: {
   displayName: string;
@@ -14,8 +45,6 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify, on
   const [value, setValue] = useState('');
   const [name, setName] = useState(displayName);
   const [attachment, setAttachment] = useState('');
-  const [codeMode, setCodeMode] = useState(false);
-  const [codeLanguage, setCodeLanguage] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setName(displayName), [displayName]);
@@ -23,9 +52,7 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify, on
   function submitMessage() {
     if (!canSend || !value.trim()) return;
     const message = value.trim();
-    const alreadyFormatted = /^\s*(`{3,}|~{3,})/.test(message);
-    const language = codeLanguage.trim().split(/\s+/)[0]?.replace(/[^a-zA-Z0-9_+.-]/g, '').slice(0, 24) ?? '';
-    const formattedMessage = codeMode && !alreadyFormatted ? `\`\`\`${language}\n${message}\n\`\`\`` : message;
+    const formattedMessage = formatDetectedCode(message);
     if (new TextEncoder().encode(formattedMessage).byteLength > 180000) {
       onNotify('ข้อความและโค้ดต้องมีขนาดไม่เกิน 180 KB');
       return;
@@ -33,8 +60,6 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify, on
     onTyping(false);
     onSend(formattedMessage);
     setValue('');
-    setCodeMode(false);
-    setCodeLanguage('');
     setAttachment('');
     if (fileRef.current) fileRef.current.value = '';
   }
@@ -60,25 +85,15 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify, on
         <small>ยังไม่ใส่ชื่อก็อ่านแชตได้ แต่ส่งข้อความไม่ได้</small>
       </form>}
       {attachment && <div className="attachment-chip" title={attachment}>{attachment}</div>}
-      {codeMode && <div className="composer-code-toolbar">
-        <span><Code2 size={14} /> ส่งเป็นโค้ด</span>
-        <label htmlFor="code-language">ภาษา</label>
-        <input id="code-language" aria-label="ภาษาโค้ด" list="code-language-options" value={codeLanguage} onChange={(event) => setCodeLanguage(event.target.value)} placeholder="อัตโนมัติ เช่น js, py, rust" />
-        <datalist id="code-language-options">
-          {['javascript', 'typescript', 'python', 'java', 'c', 'cpp', 'csharp', 'go', 'rust', 'php', 'ruby', 'swift', 'kotlin', 'html', 'css', 'json', 'yaml', 'sql', 'bash', 'markdown', 'dockerfile'].map((language) => <option value={language} key={language} />)}
-        </datalist>
-        <button type="button" aria-label="ปิดโหมดโค้ด" title="ปิดโหมดโค้ด" onClick={() => { setCodeMode(false); setCodeLanguage(''); }}><X size={14} /></button>
-      </div>}
       <div className="composer-main">
         <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend} value={value} onChange={(event) => {
           const nextValue = event.target.value;
           setValue(nextValue);
           onTyping(Boolean(nextValue.trim()));
-        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={codeMode ? 'วางโค้ดที่นี่…' : canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'ใส่ชื่อก่อนเพื่อเริ่มส่งข้อความ'} rows={1} />
+        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'ใส่ชื่อก่อนเพื่อเริ่มส่งข้อความ'} rows={1} />
         <button className="send-button" aria-label="ส่งข้อความ" title="ส่งข้อความ" disabled={!canSend || !value.trim()} onClick={submitMessage}><Send size={18} strokeWidth={1.8} /></button>
       </div>
       <div className="composer-footer">
-        <button type="button" className={codeMode ? 'code-mode-button active' : 'code-mode-button'} aria-label={codeMode ? 'ปิดโหมดโค้ด' : 'ส่งเป็นโค้ด'} title={codeMode ? 'ปิดโหมดโค้ด' : 'ส่งเป็นโค้ด'} aria-pressed={codeMode} disabled={!canSend} onClick={() => setCodeMode((enabled) => !enabled)}><Code2 size={16} /><span>โค้ด</span></button>
         <button aria-label="แนบไฟล์" title="แนบไฟล์" disabled={!canSend} onClick={() => fileRef.current?.click()}><Paperclip size={16} /></button>
         <input ref={fileRef} type="file" hidden onChange={(event) => {
           const file = event.target.files?.[0];
