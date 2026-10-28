@@ -1,6 +1,6 @@
 'use client';
 
-import { KeyboardEvent, FormEvent, useEffect, useRef, useState } from 'react';
+import { KeyboardEvent, useRef, useState } from 'react';
 import { LoaderCircle, Paperclip, Send } from 'lucide-react';
 import hljs from 'highlight.js';
 
@@ -34,21 +34,17 @@ function formatDetectedCode(text: string): string {
   return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
 }
 
-export function Composer({ displayName, canSend, sending, onSetName, onSend, onNotify, onTyping }: {
-  displayName: string;
+export function Composer({ canSend, sending, onOpenJoin, onSend, onNotify, onTyping }: {
   canSend: boolean;
   sending: boolean;
-  onSetName: (name: string) => void;
+  onOpenJoin: () => void;
   onSend: (text: string) => void;
   onNotify: (message: string) => void;
   onTyping: (isTyping: boolean) => void;
 }) {
   const [value, setValue] = useState('');
-  const [name, setName] = useState(displayName);
   const [attachment, setAttachment] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => setName(displayName), [displayName]);
 
   function submitMessage() {
     if (!canSend || !value.trim()) return;
@@ -64,10 +60,6 @@ export function Composer({ displayName, canSend, sending, onSetName, onSend, onN
     setAttachment('');
     if (fileRef.current) fileRef.current.value = '';
   }
-  function submitName(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onSetName(name);
-  }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -77,14 +69,10 @@ export function Composer({ displayName, canSend, sending, onSetName, onSend, onN
 
   return <div className="composer-wrap">
     <div className="composer">
-      {!canSend && <form className="chat-name-form" onSubmit={submitName}>
-        <label htmlFor="chat-display-name">ใส่ชื่อเพื่อส่งข้อความ</label>
-        <div className="chat-name-controls">
-          <input id="chat-display-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} placeholder="ชื่อที่เพื่อนจะเห็น" autoComplete="nickname" />
-          <button type="submit" disabled={!name.trim()}>เข้าร่วมแชต</button>
-        </div>
-        <small>ยังไม่ใส่ชื่อก็อ่านแชตได้ แต่ส่งข้อความไม่ได้</small>
-      </form>}
+      {!canSend && <div className="chat-name-form">
+        <div className="chat-join-prompt"><div><strong>เข้าร่วมแชทเพื่อส่งข้อความ</strong><small>เลือกชื่อและรูปโปรไฟล์ก่อนเริ่มคุยได้เลย</small></div><button type="button" className="chat-join-trigger" onClick={onOpenJoin}>เข้าร่วมแชท</button></div>
+        <small>ยังไม่เข้าร่วมก็อ่านแชทได้ แต่ส่งข้อความไม่ได้</small>
+      </div>}
       {attachment && <div className="attachment-chip" title={attachment}>{attachment}</div>}
       <div className="composer-main">
         <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend} value={value} onChange={(event) => {

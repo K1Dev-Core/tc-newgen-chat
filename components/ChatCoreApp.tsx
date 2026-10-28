@@ -10,6 +10,7 @@ import { Composer } from './Composer';
 import { Toast } from './Toast';
 import { LoadingOverlay } from './LoadingOverlay';
 import { ProfileDialog } from './ProfileDialog';
+import { JoinChatDialog } from './JoinChatDialog';
 import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ViewId } from '@/lib/types';
@@ -75,6 +76,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [displayName, setDisplayName] = useState('');
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
   const [activeProfile, setActiveProfile] = useState<{ profile: MemberProfile; editable: boolean } | null>(null);
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [roomId, setRoomId] = useState('');
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -276,11 +278,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     }, 3000);
   }
 
-  async function setName(name: string) {
+  async function setName(name: string, avatarUrl: string | null): Promise<boolean> {
     const normalized = name.trim().replace(/\s+/g, ' ');
     if (normalized.length < 1 || normalized.length > 32) {
       notify('ชื่อต้องมีความยาว 1–32 ตัวอักษร');
-      return;
+      return false;
     }
 
     setActionLoading(true);
@@ -290,20 +292,21 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         const { data, error } = await supabase.auth.signInAnonymously({ options: { data: { display_name: normalized } } });
         if (error || !data.user) {
           notify(error?.message ?? 'เริ่มแชตไม่สำเร็จ เปิด Anonymous Sign-ins ใน Supabase Auth');
-          return;
+          return false;
         }
         activeUser = data.user;
         setUser(data.user);
       }
 
-      const { error } = await supabase.from('profiles').update({ display_name: normalized }).eq('id', activeUser.id);
+      const { error } = await supabase.from('profiles').update({ display_name: normalized, avatar_url: avatarUrl }).eq('id', activeUser.id);
       if (error) {
         notify('บันทึกชื่อไม่สำเร็จ ตรวจ migration และ RLS policy');
-        return;
+        return false;
       }
       setDisplayName(normalized);
-      setMemberProfiles((current) => ({ ...current, [activeUser!.id]: { id: activeUser!.id, display_name: normalized, avatar_url: current[activeUser!.id]?.avatar_url ?? null } }));
+      setMemberProfiles((current) => ({ ...current, [activeUser!.id]: { id: activeUser!.id, display_name: normalized, avatar_url: avatarUrl } }));
       notify(`เข้าร่วมแชตในชื่อ ${normalized}`);
+      return true;
     } finally {
       setActionLoading(false);
     }
@@ -368,10 +371,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
+      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
+    {joinDialogOpen && <JoinChatDialog onClose={() => setJoinDialogOpen(false)} onJoin={setName} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />
   </div>;
 }
