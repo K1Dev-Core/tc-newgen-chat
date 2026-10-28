@@ -12,6 +12,7 @@ import { Toast } from './Toast';
 import { LoadingOverlay } from './LoadingOverlay';
 import { ProfileDialog } from './ProfileDialog';
 import { JoinChatDialog } from './JoinChatDialog';
+import { ShortClipsPanel } from './ShortClipsPanel';
 import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ChatRoom, ChatServer } from '@/lib/types';
@@ -126,6 +127,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [activeRoomSlug, setActiveRoomSlug] = useState(DEFAULT_ROOM_SLUG);
   const [activeBoardServerId, setActiveBoardServerId] = useState<string | null>(null);
+  const [activeShorts, setActiveShorts] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -303,6 +305,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, [supabase]);
 
   function selectRoom(slug: string) {
+    setActiveShorts(false);
     setActiveBoardServerId(null);
     if (slug === activeRoomSlug) { setMobileSidebarOpen(false); return; }
     setLoading(true);
@@ -314,6 +317,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   function selectBoard(serverId: string) {
+    setActiveShorts(false);
     setActiveBoardServerId(serverId);
     setMobileSidebarOpen(false);
   }
@@ -587,19 +591,21 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
-    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} onSelectRoom={selectRoom} onSelectBoard={selectBoard} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
+    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} activeShorts={activeShorts} onSelectRoom={selectRoom} onSelectBoard={selectBoard} onSelectShorts={() => { setActiveShorts(true); setActiveBoardServerId(null); setMobileSidebarOpen(false); }} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
-    <main className="main-area">
+    <main className={`main-area ${activeShorts ? 'shorts-main-area' : ''}`}>
+      {activeShorts ? <ShortClipsPanel onOpenSidebar={() => setMobileSidebarOpen(true)} /> : <>
       <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={roomId} viewerId={user?.id ?? null} onlineCount={onlineCount} supabase={supabase} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} userName={displayName || 'ผู้เยี่ยมชม'} avatarUrl={user ? memberProfiles[user.id]?.avatar_url ?? null : null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
         : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
+      </>}
     </main>
     {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
       <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>
       <span className="mini-sfx-sender">โดย {activeSfx.sender}</span>
     </aside>}
-    {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
+    {((loading && !activeShorts) || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
     {joinDialogOpen && <JoinChatDialog onClose={() => setJoinDialogOpen(false)} onJoin={setName} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />

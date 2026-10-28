@@ -1,16 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clapperboard, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
 import type { ChatRoom, ChatServer } from '@/lib/types';
 import { PigeonLogo } from './PigeonLogo';
 
-export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
+export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, activeShorts, onSelectRoom, onSelectBoard, onSelectShorts, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; activeShorts: boolean; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; onSelectShorts: () => void; collapsed: boolean; onToggleCollapsed: () => void }) {
   const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   return <aside className="sidebar">
     <div className="brand-row"><PigeonLogo className="brand-mascot" /><span className="brand-name">ทีซี นิวเจน</span><button className="icon-button collapse-button" aria-label={collapsed ? 'Expand project sidebar' : 'Collapse project sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
     <div className="project-heading"><span>Server</span></div>
     <nav className="project-list" aria-label="Project files">
+      <button className={`nav-item shorts-nav-item ${activeShorts ? 'active' : ''}`} onClick={onSelectShorts} aria-label="คลิปสั้น" aria-current={activeShorts ? 'page' : undefined} data-tooltip="คลิปสั้น"><Clapperboard size={15} /><span>คลิปสั้น</span></button>
       {[...servers].sort((a, b) => {
         if (a.name === 'TC') return -1;
         if (b.name === 'TC') return 1;
