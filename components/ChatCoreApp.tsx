@@ -8,6 +8,7 @@ import { Topbar } from './Topbar';
 import { ChatPanel } from './ChatPanel';
 import { Composer } from './Composer';
 import { Toast } from './Toast';
+import { LoadingOverlay } from './LoadingOverlay';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ViewId } from '@/lib/types';
 
@@ -72,6 +73,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [displayName, setDisplayName] = useState('');
   const [roomId, setRoomId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [roomError, setRoomError] = useState('');
   const [toastText, setToastText] = useState('');
   const [toastKey, setToastKey] = useState(0);
@@ -112,12 +115,15 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     let alive = true;
     if (!user) {
       setDisplayName('');
+      setProfileLoading(false);
       return () => { alive = false; };
     }
+    setProfileLoading(true);
     void supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle().then(({ data, error }) => {
       if (!alive) return;
       if (error) notify('โหลดชื่อโปรไฟล์ไม่สำเร็จ');
       setDisplayName(data?.display_name && data.display_name !== 'Guest' ? data.display_name : '');
+      setProfileLoading(false);
     });
     return () => { alive = false; };
   }, [supabase, user?.id]);
@@ -246,41 +252,51 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       return;
     }
 
-    let activeUser = user;
-    if (!activeUser) {
-      const { data, error } = await supabase.auth.signInAnonymously({ options: { data: { display_name: normalized } } });
-      if (error || !data.user) {
-        notify(error?.message ?? 'เริ่มแชตไม่สำเร็จ เปิด Anonymous Sign-ins ใน Supabase Auth');
+    setActionLoading(true);
+    try {
+      let activeUser = user;
+      if (!activeUser) {
+        const { data, error } = await supabase.auth.signInAnonymously({ options: { data: { display_name: normalized } } });
+        if (error || !data.user) {
+          notify(error?.message ?? 'เริ่มแชตไม่สำเร็จ เปิด Anonymous Sign-ins ใน Supabase Auth');
+          return;
+        }
+        activeUser = data.user;
+        setUser(data.user);
+      }
+
+      const { error } = await supabase.from('profiles').update({ display_name: normalized }).eq('id', activeUser.id);
+      if (error) {
+        notify('บันทึกชื่อไม่สำเร็จ ตรวจ migration และ RLS policy');
         return;
       }
-      activeUser = data.user;
-      setUser(data.user);
+      setDisplayName(normalized);
+      notify(`เข้าร่วมแชตในชื่อ ${normalized}`);
+    } finally {
+      setActionLoading(false);
     }
-
-    const { error } = await supabase.from('profiles').update({ display_name: normalized }).eq('id', activeUser.id);
-    if (error) {
-      notify('บันทึกชื่อไม่สำเร็จ ตรวจ migration และ RLS policy');
-      return;
-    }
-    setDisplayName(normalized);
-    notify(`เข้าร่วมแชตในชื่อ ${normalized}`);
   }
 
   async function sendMessage(text: string) {
     if (!user || !displayName || !roomId) return;
-    const { data, error } = await supabase.from('messages').insert({
-      room_id: roomId,
-      sender_id: user.id,
-      sender_name: displayName,
-      content: text,
-    }).select('id,sender_id,sender_name,content,created_at').single();
+    setActionLoading(true);
+    try {
+      const { data, error } = await supabase.from('messages').insert({
+        room_id: roomId,
+        sender_id: user.id,
+        sender_name: displayName,
+        content: text,
+      }).select('id,sender_id,sender_name,content,created_at').single();
 
-    if (error || !data) {
-      notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
-      return;
+      if (error || !data) {
+        notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
+        return;
+      }
+      const message = toChatMessage(data as MessageRow, user.id);
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+    } finally {
+      setActionLoading(false);
     }
-    const message = toChatMessage(data as MessageRow, user.id);
-    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
   }
 
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
@@ -288,9 +304,10 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} />
-      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div className="chat-loading">กำลังโหลดแชต…</div> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} />}
+      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} />}
       <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
+    {(loading || profileLoading || actionLoading) && <LoadingOverlay label={actionLoading ? 'กำลังส่งข้อมูล…' : profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     <Toast message={toastText} toastKey={toastKey} />
   </div>;
 }
