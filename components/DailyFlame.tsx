@@ -69,7 +69,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
         } else {
           pendingCelebrationRef.current = row;
         }
-      }, 10_000);
+      }, 5_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
