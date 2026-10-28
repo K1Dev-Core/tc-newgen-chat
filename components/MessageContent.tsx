@@ -1,6 +1,6 @@
  'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, File as FileIcon, X } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
@@ -9,6 +9,35 @@ import { formatFileSize, getChatFileUrls, parseChatContent, type ChatFileAttachm
 type MessagePart =
   | { type: 'text'; value: string }
   | { type: 'code'; language: string; value: string };
+
+function renderLinkedText(text: string) {
+  const urlPattern = /https?:\/\/[^\s<>]+/gi;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    const rawUrl = match[0];
+    const url = rawUrl.replace(/[.,!?;:)\]}]+$/u, '');
+    if (!url) continue;
+    let safeUrl: string | null = null;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') safeUrl = parsed.href;
+    } catch { /* Leave malformed URLs as plain text. */ }
+    if (!safeUrl) continue;
+
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
+    nodes.push(<a className="message-link" href={safeUrl} target="_blank" rel="noopener noreferrer" key={`url-${key++}`}>{url}</a>);
+    if (url.length < rawUrl.length) nodes.push(rawUrl.slice(url.length));
+    cursor = match.index + rawUrl.length;
+  }
+
+  if (!nodes.length) return text;
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
+}
 
 function splitMessage(content: string): MessagePart[] {
   const parts: MessagePart[] = [];
@@ -43,7 +72,7 @@ export function MessageContent({ content }: { content: string }) {
     {splitMessage(text).map((part, index) => part.type === 'code'
       ? <CodeBlock key={`code-${index}`} code={part.value} language={part.language} />
       : part.value
-        ? <p className="message-text" key={`text-${index}`}>{part.value}</p>
+        ? <p className="message-text" key={`text-${index}`}>{renderLinkedText(part.value)}</p>
         : null)}
     {files.length > 0 && <div className="chat-attachments">{files.map((file) => {
       const urls = getChatFileUrls(file);
