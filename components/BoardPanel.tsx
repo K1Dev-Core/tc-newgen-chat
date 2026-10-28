@@ -42,6 +42,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('loading');
   const [boardError, setBoardError] = useState('');
+  const [onlineCount, setOnlineCount] = useState(0);
   const [collaborators, setCollaborators] = useState<Map<SocketId, Collaborator>>(new Map());
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -102,8 +103,22 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
     setInitialData(null);
     setSaveState('loading');
     setBoardError('');
+    setOnlineCount(0);
 
-    const channel = supabase.channel(`server-board:${serverId}`, { config: { broadcast: { self: false } } }).on(
+    const refreshOnlineCount = () => {
+      const uniqueMembers = new Set<string>();
+      Object.entries(channel.presenceState()).forEach(([presenceKey, entries]) => entries.forEach((entry) => {
+        const member = entry as { user_id?: string; client_id?: string };
+        uniqueMembers.add(member.user_id ?? member.client_id ?? presenceKey);
+      }));
+      setOnlineCount(uniqueMembers.size);
+    };
+    const channel = supabase.channel(`server-board:${serverId}`, {
+      config: { broadcast: { self: false }, presence: { key: clientIdRef.current } },
+    }).on('presence', { event: 'sync' }, refreshOnlineCount)
+      .on('presence', { event: 'join' }, refreshOnlineCount)
+      .on('presence', { event: 'leave' }, refreshOnlineCount)
+      .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'server_boards', filter: `server_id=eq.${serverId}` },
       (payload) => {
@@ -130,6 +145,9 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
     }).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         channelRef.current = channel;
+        void channel.track({ client_id: clientIdRef.current, user_id: userId ?? undefined, display_name: userName }).catch((error) => {
+          console.error('[Board] Presence track failed.', { serverId, error });
+        });
       }
       if (!alive || status !== 'CHANNEL_ERROR' && status !== 'TIMED_OUT') return;
       console.error('[Board] Realtime subscription failed.', { serverId, status });
@@ -264,6 +282,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, us
   return <section className="board-panel" aria-label={`${serverName} shared board`}>
     <header className="board-heading">
       <div className="board-title"><PencilRuler size={17} /><div><strong>บอร์ด · {serverName}</strong><small>วาดและวางแผนร่วมกัน</small></div></div>
+      <div className="board-online-count" aria-label={`${onlineCount} คนออนไลน์`} title="จำนวนคนที่เปิดบอร์ดนี้อยู่"><Users size={14} /><span>{onlineCount} ออนไลน์</span></div>
       <div className={`board-save-state board-save-${saveState}`} aria-live="polite">
         {saveState === 'saving' || saveState === 'loading' ? <LoaderCircle size={14} className="board-spinner" /> : saveState === 'saved' ? <Users size={14} /> : <LockKeyhole size={14} />}
         <span>{saveLabel}</span>
