@@ -20,6 +20,33 @@ import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 const DEFAULT_ROOM_SLUG = 'nok-phirab-sue-sarn';
 const SFX_COOLDOWN_MS = 30_000;
+const SFX_CLIENT_ID_KEY = 'tc-newgen:sfx-client-id';
+const SFX_COOLDOWN_KEY = 'tc-newgen:sfx-cooldown-until';
+const SFX_EVENT_KEY_PREFIX = 'tc-newgen:sfx-event:';
+
+function claimSfxEvent(eventId: string): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const key = `${SFX_EVENT_KEY_PREFIX}${eventId}`;
+    if (window.localStorage.getItem(key)) return false;
+    const now = Date.now();
+    window.localStorage.setItem(key, String(now));
+    const eventKeys: Array<{ key: string; time: number }> = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const existingKey = window.localStorage.key(index);
+      if (!existingKey?.startsWith(SFX_EVENT_KEY_PREFIX)) continue;
+      const time = Number(window.localStorage.getItem(existingKey));
+      if (!Number.isFinite(time) || now - time > 120_000) window.localStorage.removeItem(existingKey);
+      else eventKeys.push({ key: existingKey, time });
+    }
+    eventKeys.sort((a, b) => a.time - b.time);
+    eventKeys.slice(0, Math.max(0, eventKeys.length - 200)).forEach(({ key: oldKey }) => window.localStorage.removeItem(oldKey));
+    return true;
+  } catch {
+    // Storage can be unavailable in private browsing; in-memory event IDs still dedupe.
+    return true;
+  }
+}
 
 type MessageRow = {
   id: string;
@@ -119,7 +146,17 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const sfxCooldownUntilRef = useRef(0);
 
   useEffect(() => {
-    clientIdRef.current = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    let sharedClientId = '';
+    try {
+      sharedClientId = window.localStorage.getItem(SFX_CLIENT_ID_KEY) ?? '';
+      if (!sharedClientId) {
+        sharedClientId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+        window.localStorage.setItem(SFX_CLIENT_ID_KEY, sharedClientId);
+      }
+    } catch {
+      sharedClientId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    }
+    clientIdRef.current = sharedClientId;
     SFX_CATALOG.filter((item) => item.gif).forEach((item) => {
       const image = new Image();
       image.src = item.gif!;
@@ -133,7 +170,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, [sfxCooldownRemaining > 0]);
 
   function playSfx(item: RemoteSfxItem, sender: string, eventId: string) {
-    if (!eventId || seenSfxEventsRef.current.has(eventId)) return;
+    if (!eventId || seenSfxEventsRef.current.has(eventId) || !claimSfxEvent(eventId)) return;
     seenSfxEventsRef.current.add(eventId);
     if (seenSfxEventsRef.current.size > 200) {
       const oldestEvent = seenSfxEventsRef.current.values().next().value;
@@ -398,11 +435,16 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     const channel = typingChannelRef.current;
     if (!channel) { notify('กำลังเชื่อมต่อห้องแชท ลองอีกครั้ง'); return; }
     const now = Date.now();
-    if (sfxCooldownUntilRef.current > now) {
-      notify(`รออีก ${Math.ceil((sfxCooldownUntilRef.current - now) / 1000)} วินาทีจึงจะเล่น SFX ได้`);
+    let cooldownUntil = sfxCooldownUntilRef.current;
+    try { cooldownUntil = Math.max(cooldownUntil, Number(window.localStorage.getItem(SFX_COOLDOWN_KEY)) || 0); } catch { /* use the in-memory cooldown */ }
+    if (cooldownUntil > now) {
+      sfxCooldownUntilRef.current = cooldownUntil;
+      setSfxCooldownRemaining(cooldownUntil - now);
+      notify(`รออีก ${Math.ceil((cooldownUntil - now) / 1000)} วินาทีจึงจะเล่น SFX ได้`);
       return;
     }
     sfxCooldownUntilRef.current = now + SFX_COOLDOWN_MS;
+    try { window.localStorage.setItem(SFX_COOLDOWN_KEY, String(sfxCooldownUntilRef.current)); } catch { /* keep cooldown in memory */ }
     setSfxCooldownRemaining(SFX_COOLDOWN_MS);
     const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
     playSfx(item, displayName, eventId);
