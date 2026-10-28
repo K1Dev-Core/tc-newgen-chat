@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, File as FileIcon, X } from 'lucide-react';
+import { Download, Expand, File as FileIcon, X } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
 import { formatFileSize, getChatFileUrls, parseChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 
@@ -60,13 +60,14 @@ function splitMessage(content: string): MessagePart[] {
 export function MessageContent({ content }: { content: string }) {
   const { text, files } = parseChatContent(content);
   const [activeImage, setActiveImage] = useState<ChatFileAttachment | null>(null);
+  const [activeVideo, setActiveVideo] = useState<ChatFileAttachment | null>(null);
 
   useEffect(() => {
-    if (!activeImage) return;
-    function onKeyDown(event: KeyboardEvent) { if (event.key === 'Escape') setActiveImage(null); }
+    if (!activeImage && !activeVideo) return;
+    function onKeyDown(event: KeyboardEvent) { if (event.key === 'Escape') { setActiveImage(null); setActiveVideo(null); } }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeImage]);
+  }, [activeImage, activeVideo]);
 
   return <div className="group-message-bubble message-content">
     {splitMessage(text).map((part, index) => part.type === 'code'
@@ -76,6 +77,10 @@ export function MessageContent({ content }: { content: string }) {
         : null)}
     {files.length > 0 && <div className="chat-attachments">{files.map((file) => {
       const urls = getChatFileUrls(file);
+      if (urls.videoPreview) return <article className="chat-video-attachment" key={file.id}>
+        <video className="chat-video-preview" src={urls.videoPreview} controls playsInline preload="metadata" aria-label={`วิดีโอ ${file.filename}`} />
+        <div className="chat-file-caption"><span title={file.filename}>{file.filename}<small>{file.mimeType || 'วิดีโอ'} · {formatFileSize(file.size)}</small></span><div className="chat-media-actions"><button type="button" aria-label={`ขยายวิดีโอ ${file.filename} เต็มจอ`} title="ขยายเต็มจอ" onClick={() => setActiveVideo(file)}><Expand size={15} /></button><a href={urls.download} aria-label={`ดาวน์โหลด ${file.filename}`} title="ดาวน์โหลด"><Download size={15} /></a></div></div>
+      </article>;
       return urls.preview
         ? <article className="chat-image-attachment" key={file.id}>
           <button type="button" className="chat-image-preview-button" aria-label={`ดูรูป ${file.filename} เต็มจอ`} onClick={() => setActiveImage(file)}><img src={urls.preview} alt={file.filename} loading="lazy" /></button>
@@ -88,6 +93,10 @@ export function MessageContent({ content }: { content: string }) {
     {activeImage && createPortal(<div className="chat-image-modal" role="dialog" aria-modal="true" aria-label={`รูป ${activeImage.filename}`} onClick={() => setActiveImage(null)}>
       <header className="chat-image-modal-toolbar" onClick={(event) => event.stopPropagation()}><span title={activeImage.filename}>{activeImage.filename}</span><a href={getChatFileUrls(activeImage).download}><Download size={17} /> ดาวน์โหลด</a><button type="button" aria-label="ปิดรูป" onClick={() => setActiveImage(null)}><X size={20} /></button></header>
       <img src={getChatFileUrls(activeImage).preview ?? ''} alt={activeImage.filename} onClick={(event) => event.stopPropagation()} />
+    </div>, document.body)}
+    {activeVideo && createPortal(<div className="chat-image-modal chat-video-modal" role="dialog" aria-modal="true" aria-label={`วิดีโอ ${activeVideo.filename}`} onClick={() => setActiveVideo(null)}>
+      <header className="chat-image-modal-toolbar" onClick={(event) => event.stopPropagation()}><span title={activeVideo.filename}>{activeVideo.filename}</span><a href={getChatFileUrls(activeVideo).download} aria-label={`ดาวน์โหลด ${activeVideo.filename}`}><Download size={17} /> ดาวน์โหลด</a><button type="button" aria-label="ปิดวิดีโอ" onClick={() => setActiveVideo(null)}><X size={20} /></button></header>
+      <video className="chat-video-fullscreen" src={getChatFileUrls(activeVideo).videoPreview ?? undefined} controls playsInline autoPlay onClick={(event) => event.stopPropagation()} />
     </div>, document.body)}
   </div>;
 }

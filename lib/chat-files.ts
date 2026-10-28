@@ -8,6 +8,7 @@ export type ChatFileAttachment = {
 const FILE_MARKER = /\n?\[\[TCFILES1:([^\]]+)\]\]$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const IMAGE_PREVIEW_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
+const VIDEO_PREVIEW_TYPES = new Set(['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-m4v', 'video/3gpp', 'video/mpeg', 'video/x-msvideo']);
 
 export function serializeChatContent(text: string, files: ChatFileAttachment[]) {
   if (!files.length) return text;
@@ -39,6 +40,7 @@ export function getChatFileUrls(file: ChatFileAttachment) {
   return {
     download: `${fileCdnUrl}/v1/files/${file.id}/download`,
     preview: IMAGE_PREVIEW_TYPES.has(file.mimeType) ? `${fileCdnUrl}/v1/files/${file.id}/preview` : null,
+    videoPreview: VIDEO_PREVIEW_TYPES.has(file.mimeType) ? `${fileCdnUrl}/v1/files/${file.id}/preview` : null,
   };
 }
 
