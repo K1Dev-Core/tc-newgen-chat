@@ -16,6 +16,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ViewId } from '@/lib/types';
 import { serializeChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 import { uploadChatFile } from '@/lib/file-upload-client';
+import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 const ROOM_SLUG = 'nok-phirab-sue-sarn';
 
@@ -32,6 +33,12 @@ type TypingPayload = {
   user_id: string;
   display_name: string;
   is_typing: boolean;
+};
+
+type SfxPayload = {
+  event_id: string;
+  sfx_id: string;
+  sender_name: string;
 };
 
 function toChatMessage(row: MessageRow, currentUserId?: string): ChatMessage {
@@ -87,6 +94,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [roomError, setRoomError] = useState('');
   const [toastText, setToastText] = useState('');
   const [toastKey, setToastKey] = useState(0);
+  const [activeSfx, setActiveSfx] = useState<{ item: RemoteSfxItem; sender: string; eventId: string } | null>(null);
   const [projectOpen, setProjectOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -96,10 +104,43 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const typingActiveRef = useRef(false);
   const lastTypingBroadcastRef = useRef(0);
   const clientIdRef = useRef('');
+  const sfxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSfxRef = useRef<string[]>([]);
 
   useEffect(() => {
     clientIdRef.current = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    SFX_CATALOG.filter((item) => item.gif).forEach((item) => {
+      const image = new Image();
+      image.src = item.gif!;
+    });
   }, []);
+
+  useEffect(() => {
+    const playPendingSfx = () => {
+      const pending = pendingSfxRef.current.splice(0);
+      pending.forEach((url) => {
+        const audio = new Audio(url);
+        void audio.play().catch(() => { pendingSfxRef.current.unshift(url); });
+      });
+    };
+    window.addEventListener('pointerdown', playPendingSfx);
+    window.addEventListener('keydown', playPendingSfx);
+    return () => {
+      window.removeEventListener('pointerdown', playPendingSfx);
+      window.removeEventListener('keydown', playPendingSfx);
+    };
+  }, []);
+
+  function playSfx(item: RemoteSfxItem, sender: string, eventId: string) {
+    if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
+    setActiveSfx({ item, sender, eventId });
+    sfxTimeoutRef.current = setTimeout(() => setActiveSfx(null), item.holdMs ?? 3600);
+    const audio = new Audio(item.url);
+    audio.preload = 'auto';
+    void audio.play().catch(() => {
+      pendingSfxRef.current = [...pendingSfxRef.current.slice(-2), item.url];
+    });
+  }
 
   function notify(message: string) {
     setToastText(message);
@@ -196,6 +237,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         typingClientsRef.current.delete(typing.client_id);
       }
       setTypingNames(Array.from(typingClientsRef.current.values(), (entry) => entry.name));
+    }).on('broadcast', { event: 'sfx' }, ({ payload }) => {
+      const sfx = payload as SfxPayload;
+      const item = SFX_CATALOG.find((entry) => entry.id === sfx?.sfx_id);
+      if (!item || !sfx.event_id || !sfx.sender_name) return;
+      playSfx(item, sfx.sender_name, sfx.event_id);
     }).on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
@@ -234,6 +280,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       lastTypingBroadcastRef.current = 0;
       typingClientsRef.current.forEach(({ timeout }) => clearTimeout(timeout));
       typingClientsRef.current.clear();
+      if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
+      setActiveSfx(null);
       typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
@@ -278,6 +326,20 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         payload: { client_id: clientIdRef.current, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
       });
     }, 3000);
+  }
+
+  async function broadcastSfx(item: RemoteSfxItem) {
+    if (!user || !displayName) { notify('เข้าร่วมแชทก่อนจึงจะส่งเสียงให้ทุกคนได้'); return; }
+    const channel = typingChannelRef.current;
+    if (!channel) { notify('กำลังเชื่อมต่อห้องแชท ลองอีกครั้ง'); return; }
+    const eventId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+    playSfx(item, displayName, eventId);
+    const result = await channel.send({
+      type: 'broadcast',
+      event: 'sfx',
+      payload: { event_id: eventId, sfx_id: item.id, sender_name: displayName } satisfies SfxPayload,
+    });
+    if (result !== 'ok') notify('เสียงเล่นในเครื่องแล้ว แต่ส่งไปยังสมาชิกคนอื่นไม่สำเร็จ ลองอีกครั้ง');
   }
 
   async function setName(name: string, avatarUrl: string | null): Promise<boolean> {
@@ -388,8 +450,12 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} />
+      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
     </main>
+    {activeSfx && <div key={activeSfx.eventId} className="sfx-stage" aria-live="polite" role="status">
+      {activeSfx.item.gif && <img src={activeSfx.item.gif} alt="" className="sfx-stage-gif" />}
+      <div className="sfx-stage-label"><span>{activeSfx.item.emoji}</span><strong>{activeSfx.item.name}</strong><small>เล่นโดย {activeSfx.sender}</small></div>
+    </div>}
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
     {joinDialogOpen && <JoinChatDialog onClose={() => setJoinDialogOpen(false)} onJoin={setName} saving={actionLoading} />}

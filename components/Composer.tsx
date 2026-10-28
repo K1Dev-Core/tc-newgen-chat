@@ -1,9 +1,10 @@
 'use client';
 
-import { DragEvent, KeyboardEvent, ClipboardEvent, useRef, useState } from 'react';
-import { File as FileIcon, LoaderCircle, Paperclip, Send, X } from 'lucide-react';
+import { DragEvent, KeyboardEvent, ClipboardEvent, useMemo, useRef, useState } from 'react';
+import { File as FileIcon, LoaderCircle, Paperclip, Search, Send, Volume2, X } from 'lucide-react';
 import hljs from 'highlight.js';
 import { formatFileSize, type ChatFileAttachment } from '@/lib/chat-files';
+import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 function detectCodeLanguage(text: string): string | null {
   const source = text.trim();
@@ -35,7 +36,7 @@ function formatDetectedCode(text: string): string {
   return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
 }
 
-export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, onNotify, onTyping }: {
+export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, onNotify, onTyping, onPlaySfx }: {
   canSend: boolean;
   sending: boolean;
   onOpenJoin: () => void;
@@ -43,14 +44,21 @@ export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, o
   onUploadFile: (file: File, onProgress: (percentage: number) => void) => Promise<ChatFileAttachment>;
   onNotify: (message: string) => void;
   onTyping: (isTyping: boolean) => void;
+  onPlaySfx: (item: RemoteSfxItem) => void;
 }) {
   const [value, setValue] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ filename: string; percentage: number } | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [sfxOpen, setSfxOpen] = useState(false);
+  const [sfxSearch, setSfxSearch] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const busy = sending || uploading;
+  const visibleSfx = useMemo(() => {
+    const query = sfxSearch.trim().toLocaleLowerCase();
+    return SFX_CATALOG.filter((item) => !query || `${item.name} ${item.id}`.toLocaleLowerCase().includes(query)).slice(0, 100);
+  }, [sfxSearch]);
 
   function addFiles(fileList: FileList | File[]) {
     if (!canSend || !fileList.length) return;
@@ -131,6 +139,20 @@ export function Composer({ canSend, sending, onOpenJoin, onSend, onUploadFile, o
         <button className="send-button" aria-label={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} title={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} disabled={!canSend || (!value.trim() && !files.length) || busy} onClick={() => { void submitMessage(); }}>{busy ? <LoaderCircle className="send-spinner" size={17} strokeWidth={2} /> : <Send size={18} strokeWidth={1.8} />}</button>
       </div>
       <div className="composer-footer">
+        <div className="sfx-picker">
+          <button type="button" className="sfx-trigger" aria-label="เปิดคลังเสียง" title="เล่น SFX ให้ทุกคนในห้องได้ยิน" aria-expanded={sfxOpen} disabled={!canSend || busy} onClick={() => setSfxOpen((open) => !open)}><Volume2 size={16} /><span>SFX</span></button>
+          {sfxOpen && <section className="sfx-menu" aria-label="คลังเสียง">
+            <header className="sfx-menu-header"><div><strong>คลังเสียง</strong><small>กดเพื่อเล่นให้ทุกคนในห้อง</small></div><button type="button" aria-label="ปิดคลังเสียง" onClick={() => setSfxOpen(false)}><X size={15} /></button></header>
+            <label className="sfx-search"><Search size={14} /><input autoFocus value={sfxSearch} onChange={(event) => setSfxSearch(event.target.value)} placeholder="ค้นหาเสียง…" /></label>
+            <div className="sfx-list" role="listbox" aria-label="เสียงที่เลือกได้">
+              {visibleSfx.map((item) => <button type="button" role="option" aria-selected="false" className="sfx-option" key={item.id} style={{ '--sfx-accent': item.color || '#6967a8' } as React.CSSProperties} title={`เล่น ${item.name} ให้ทั้งห้อง`} onClick={() => onPlaySfx(item)}>
+                <span className="sfx-option-emoji">{item.emoji}</span><span className="sfx-option-name">{item.name}</span><Volume2 size={13} className="sfx-option-play" />
+              </button>)}
+              {visibleSfx.length === 0 && <p className="sfx-empty">ไม่พบเสียงที่ค้นหา</p>}
+              {visibleSfx.length === 100 && <small className="sfx-limit">แสดง 100 รายการแรก พิมพ์ค้นหาเพื่อหาเสียงอื่น</small>}
+            </div>
+          </section>}
+        </div>
         <button aria-label="แนบไฟล์" title="แนบไฟล์ (หรือวาง/ลากไฟล์ลงช่องแชท)" disabled={!canSend || busy} onClick={() => fileRef.current?.click()}><Paperclip size={16} /></button>
         <input ref={fileRef} type="file" hidden multiple onChange={(event) => { addFiles(event.target.files ?? []); event.target.value = ''; }} />
       </div>
