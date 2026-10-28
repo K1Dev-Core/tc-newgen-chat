@@ -11,7 +11,11 @@ export function Sidebar({ servers, rooms, activeRoomSlug, onSelectRoom, collapse
     <div className="brand-row"><PigeonLogo className="brand-mascot" /><span className="brand-name">ทีซี นิวเจน</span><button className="icon-button collapse-button" aria-label={collapsed ? 'Expand project sidebar' : 'Collapse project sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
     <div className="project-heading"><span>Server</span></div>
     <nav className="project-list" aria-label="Project files">
-      {servers.map((server) => {
+      {[...servers].sort((a, b) => {
+        if (a.name === 'TC') return -1;
+        if (b.name === 'TC') return 1;
+        return a.name.localeCompare(b.name, 'th');
+      }).map((server) => {
         const serverRooms = rooms.filter((room) => room.server_id === server.id);
         const expanded = expandedServers[server.id] ?? true;
         const active = serverRooms.some((room) => room.slug === activeRoomSlug);
