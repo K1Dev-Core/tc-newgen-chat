@@ -30,6 +30,7 @@ npm run dev
 - No name: the room is readable, but the message box is disabled.
 - Enter a name: Supabase creates an anonymous session in the background; the profile name is saved and the sender can post.
 - Messages are stored in Postgres and delivered to open clients using Supabase Realtime Postgres Changes.
+- A temporary Realtime Broadcast indicator shows who is typing; it lists up to three names and switches to a group indicator for four or more people.
 - Profile image URLs can be added to `profiles.avatar_url` later and can point to the separate profile image CDN project.
 
 This room is intentionally public-read to support visitors without login. Display names are not verified, and a user can choose a name already used by someone else. Do not use this setup for private conversations or sensitive data.

@@ -3,12 +3,13 @@
 import { KeyboardEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import { Paperclip, Send } from 'lucide-react';
 
-export function Composer({ displayName, canSend, onSetName, onSend, onNotify }: {
+export function Composer({ displayName, canSend, onSetName, onSend, onNotify, onTyping }: {
   displayName: string;
   canSend: boolean;
   onSetName: (name: string) => void;
   onSend: (text: string) => void;
   onNotify: (message: string) => void;
+  onTyping: (isTyping: boolean) => void;
 }) {
   const [value, setValue] = useState('');
   const [name, setName] = useState(displayName);
@@ -19,6 +20,7 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify }: 
 
   function submitMessage() {
     if (!canSend || !value.trim()) return;
+    onTyping(false);
     onSend(value.trim());
     setValue('');
     setAttachment('');
@@ -47,7 +49,11 @@ export function Composer({ displayName, canSend, onSetName, onSend, onNotify }: 
       </form>}
       {attachment && <div className="attachment-chip" title={attachment}>{attachment}</div>}
       <div className="composer-main">
-        <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'ใส่ชื่อก่อนเพื่อเริ่มส่งข้อความ'} rows={1} />
+        <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend} value={value} onChange={(event) => {
+          const nextValue = event.target.value;
+          setValue(nextValue);
+          onTyping(Boolean(nextValue.trim()));
+        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'ใส่ชื่อก่อนเพื่อเริ่มส่งข้อความ'} rows={1} />
         <button className="send-button" aria-label="ส่งข้อความ" title="ส่งข้อความ" disabled={!canSend || !value.trim()} onClick={submitMessage}><Send size={18} strokeWidth={1.8} /></button>
       </div>
       <div className="composer-footer">

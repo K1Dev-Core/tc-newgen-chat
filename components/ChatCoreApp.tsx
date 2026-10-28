@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ChatPanel } from './ChatPanel';
@@ -19,6 +19,13 @@ type MessageRow = {
   sender_name: string;
   content: string;
   created_at: string;
+};
+
+type TypingPayload = {
+  client_id: string;
+  user_id: string;
+  display_name: string;
+  is_typing: boolean;
 };
 
 function toChatMessage(row: MessageRow, currentUserId?: string): ChatMessage {
@@ -60,6 +67,7 @@ function SetupScreen() {
 function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [activeView, setActiveView] = useState<ViewId>('Chat');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [typingNames, setTypingNames] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [roomId, setRoomId] = useState('');
@@ -70,6 +78,12 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [projectOpen, setProjectOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const typingChannelRef = useRef<RealtimeChannel | null>(null);
+  const typingClientsRef = useRef(new Map<string, { name: string; timeout: ReturnType<typeof setTimeout> }>());
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingActiveRef = useRef(false);
+  const lastTypingBroadcastRef = useRef(0);
+  const clientId = useId().replaceAll(':', '');
 
   function notify(message: string) {
     setToastText(message);
@@ -121,7 +135,23 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   useEffect(() => {
     if (!roomId) return;
     let alive = true;
-    const channel = supabase.channel(`chat-room:${roomId}`).on(
+    const channel = supabase.channel(`chat-room:${roomId}`).on('broadcast', { event: 'typing' }, ({ payload }) => {
+      const typing = payload as TypingPayload;
+      if (!typing?.client_id || typing.client_id === clientId || !typing.display_name) return;
+
+      const existing = typingClientsRef.current.get(typing.client_id);
+      if (existing) clearTimeout(existing.timeout);
+      if (typing.is_typing) {
+        const timeout = setTimeout(() => {
+          typingClientsRef.current.delete(typing.client_id);
+          setTypingNames(Array.from(typingClientsRef.current.values(), (entry) => entry.name));
+        }, 4000);
+        typingClientsRef.current.set(typing.client_id, { name: typing.display_name, timeout });
+      } else {
+        typingClientsRef.current.delete(typing.client_id);
+      }
+      setTypingNames(Array.from(typingClientsRef.current.values(), (entry) => entry.name));
+    }).on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
       (payload) => {
@@ -131,6 +161,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
           : [...current, message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       },
     ).subscribe();
+    typingChannelRef.current = channel;
 
     void supabase.from('messages')
       .select('id,sender_id,sender_name,content,created_at')
@@ -153,9 +184,56 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
 
     return () => {
       alive = false;
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingActiveRef.current = false;
+      lastTypingBroadcastRef.current = 0;
+      typingClientsRef.current.forEach(({ timeout }) => clearTimeout(timeout));
+      typingClientsRef.current.clear();
+      typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, roomId, user?.id]);
+  }, [supabase, roomId, user?.id, clientId]);
+
+  function broadcastTyping(isTyping: boolean) {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = null;
+
+    const channel = typingChannelRef.current;
+    if (!isTyping || !user || !displayName || !channel) {
+      if (!typingActiveRef.current) return;
+      typingActiveRef.current = false;
+      lastTypingBroadcastRef.current = 0;
+      if (channel && user && displayName) {
+        void channel.send({
+          type: 'broadcast',
+          event: 'typing',
+          payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
+        });
+      }
+      return;
+    }
+
+    typingActiveRef.current = true;
+    const sendTyping = () => channel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: true } satisfies TypingPayload,
+    });
+    if (Date.now() - lastTypingBroadcastRef.current >= 1000) {
+      lastTypingBroadcastRef.current = Date.now();
+      void sendTyping();
+    }
+    typingTimeoutRef.current = setTimeout(() => {
+      if (!typingActiveRef.current) return;
+      typingActiveRef.current = false;
+      lastTypingBroadcastRef.current = 0;
+      void channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { client_id: clientId, user_id: user.id, display_name: displayName, is_typing: false } satisfies TypingPayload,
+      });
+    }, 3000);
+  }
 
   async function setName(name: string) {
     const normalized = name.trim().replace(/\s+/g, ' ');
@@ -206,8 +284,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} />
-      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div className="chat-loading">กำลังโหลดแชต…</div> : <ChatPanel activeView={activeView} messages={messages} />}
-      <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} onSetName={setName} onSend={sendMessage} onNotify={notify} />
+      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div className="chat-loading">กำลังโหลดแชต…</div> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} />}
+      <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
     <Toast message={toastText} toastKey={toastKey} />
   </div>;
