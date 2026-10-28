@@ -57,7 +57,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
       try { window.localStorage.setItem(seenKey, 'seen'); } catch { /* In-memory receipt still prevents repeat overlays in this tab. */ }
       setCelebration({ name: row.today_fueled_name ?? 'เพื่อนในห้อง', key: Date.now() });
       if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current);
-      celebrationTimerRef.current = setTimeout(() => setCelebration(null), 4200);
+      celebrationTimerRef.current = setTimeout(() => setCelebration(null), 10_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
