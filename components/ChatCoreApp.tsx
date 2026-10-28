@@ -570,14 +570,16 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       }).select('id,sender_id,sender_name,content,created_at').single();
 
       if (error || !data) {
-        notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
+        console.error('[Chat] Message insert failed.', { roomId, userId: user.id, error });
+        notify(error?.message ? `ส่งข้อความไม่สำเร็จ: ${error.message}` : 'ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
         return false;
       }
       const message = toChatMessage(data as MessageRow, user.id);
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
       return true;
-    } catch {
-      notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
+    } catch (error) {
+      console.error('[Chat] Message insert threw an unexpected error.', { roomId, userId: user.id, error });
+      notify(error instanceof Error ? `ส่งข้อความไม่สำเร็จ: ${error.message}` : 'ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
       return false;
     } finally {
       setSendingMessage(false);
