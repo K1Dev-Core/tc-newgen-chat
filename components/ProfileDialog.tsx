@@ -5,7 +5,7 @@ import { Check, LoaderCircle, LogOut, X } from 'lucide-react';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 
-type ProfileChoice = { id: string; name: string; imageUrl: string; alt: string };
+type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string };
 export type MemberProfile = { id: string; display_name: string; avatar_url: string | null };
 
 export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, saving = false }: {
@@ -59,8 +59,8 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
         <input className="profile-name-input" id="profile-display-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} autoComplete="nickname" />
         <div className="profile-choice-heading"><strong>เลือกรูปโปรไฟล์</strong><span>{choices.length} รูป</span></div>
         {loading ? <div className="profile-choice-loading"><LoaderCircle size={16} /> กำลังโหลดรูป…</div> : loadError ? <p className="profile-choice-error">{loadError}</p> : <div className="profile-choice-grid" aria-label="เลือกรูปโปรไฟล์">
-          {choices.map((choice) => <button type="button" key={choice.id} className={`profile-choice ${avatarUrl === choice.imageUrl ? 'selected' : ''}`} onClick={() => setAvatarUrl(choice.imageUrl)} aria-label={choice.name} aria-pressed={avatarUrl === choice.imageUrl} title={choice.name}>
-            <img src={choice.imageUrl} alt="" loading="lazy" /><span className="profile-choice-name">{choice.name}</span>{avatarUrl === choice.imageUrl && <span className="profile-choice-check"><Check size={12} /></span>}
+          {choices.map((choice) => <button type="button" key={choice.id} className={`profile-choice ${avatarUrl === choice.imageUrl ? 'selected' : ''}`} onClick={() => setAvatarUrl(choice.imageUrl)} aria-label={`${choice.name}: ${choice.description}`} aria-pressed={avatarUrl === choice.imageUrl} title={`${choice.name} — ${choice.description}`}>
+            <img src={choice.imageUrl} alt="" loading="lazy" /><span className="profile-choice-name"><strong>{choice.name}</strong><small>{choice.description}</small></span>{avatarUrl === choice.imageUrl && <span className="profile-choice-check"><Check size={12} /></span>}
           </button>)}
         </div>}
         <div className="profile-dialog-actions">

@@ -20,7 +20,7 @@ const PIGEON_NAMES = [
   'หางพัด', 'คอเหลือบ', 'ขนเทา', 'จุดขาว', 'ปีกลาย', 'ยอดขุนพล', 'เจ้าสำราญ', 'จอมยุทธ์', 'ขุนแผนเวหา', 'ท่านขุนปีกทอง',
 ];
 
-type ProfileChoice = { id: string; name: string; imageUrl: string; alt: string };
+type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string };
 const randomItem = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
 export function JoinChatDialog({ onClose, onJoin, saving = false }: {
@@ -82,8 +82,8 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
         <input className="profile-name-input" id="join-display-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} placeholder="เช่น พิราบสายลม" autoComplete="nickname" autoFocus />
         <div className="profile-choice-heading"><strong>เลือกรูปโปรไฟล์</strong><span>{choices.length} รูป</span></div>
         {loading ? <div className="profile-choice-loading"><LoaderCircle size={16} /> กำลังโหลดรูป…</div> : loadError ? <p className="profile-choice-error">{loadError}</p> : <div className="profile-choice-grid" aria-label="เลือกรูปโปรไฟล์">
-          {choices.map((choice) => <button type="button" key={choice.id} className={`profile-choice ${avatarUrl === choice.imageUrl ? 'selected' : ''}`} onClick={() => setAvatarUrl(choice.imageUrl)} aria-label={choice.name} aria-pressed={avatarUrl === choice.imageUrl} title={choice.name}>
-            <img src={choice.imageUrl} alt="" loading="lazy" /><span className="profile-choice-name">{choice.name}</span>
+          {choices.map((choice) => <button type="button" key={choice.id} className={`profile-choice ${avatarUrl === choice.imageUrl ? 'selected' : ''}`} onClick={() => setAvatarUrl(choice.imageUrl)} aria-label={`${choice.name}: ${choice.description}`} aria-pressed={avatarUrl === choice.imageUrl} title={`${choice.name} — ${choice.description}`}>
+            <img src={choice.imageUrl} alt="" loading="lazy" /><span className="profile-choice-name"><strong>{choice.name}</strong><small>{choice.description}</small></span>
           </button>)}
         </div>}
         <div className="profile-dialog-actions">
