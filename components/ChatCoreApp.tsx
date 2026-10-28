@@ -128,6 +128,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [activeBoardServerId, setActiveBoardServerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingNames, setTypingNames] = useState<string[]>([]);
+  const [onlineCount, setOnlineCount] = useState(0);
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
@@ -318,9 +319,23 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId || activeBoardServerId) { setOnlineCount(0); return; }
     let alive = true;
-    const channel = supabase.channel(`chat-room:${roomId}`).on('broadcast', { event: 'typing' }, ({ payload }) => {
+    setOnlineCount(0);
+    const refreshOnlineCount = () => {
+      const uniqueMembers = new Set<string>();
+      Object.entries(channel.presenceState()).forEach(([presenceKey, entries]) => entries.forEach((entry) => {
+        const member = entry as { user_id?: string; client_id?: string };
+        uniqueMembers.add(member.user_id ?? member.client_id ?? presenceKey);
+      }));
+      setOnlineCount(uniqueMembers.size);
+    };
+    const channel = supabase.channel(`chat-room:${roomId}`, {
+      config: { broadcast: { self: false }, presence: { key: clientIdRef.current || roomId } },
+    }).on('presence', { event: 'sync' }, refreshOnlineCount)
+      .on('presence', { event: 'join' }, refreshOnlineCount)
+      .on('presence', { event: 'leave' }, refreshOnlineCount)
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
       const typing = payload as TypingPayload;
       if (!typing?.client_id || typing.client_id === clientIdRef.current || !typing.display_name) return;
 
@@ -351,7 +366,13 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
           ? current
           : [...current, message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       },
-    ).subscribe();
+    ).subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        void channel.track({ client_id: clientIdRef.current, user_id: user?.id ?? undefined, display_name: displayName || 'ผู้เยี่ยมชม' }).catch((error) => {
+          console.error('[Chat] Presence track failed.', { roomId, error });
+        });
+      }
+    });
     typingChannelRef.current = channel;
 
     void supabase.from('messages')
@@ -388,10 +409,11 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         sfxAudioRef.current = null;
       }
       setActiveSfx(null);
+      setOnlineCount(0);
       typingChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [supabase, roomId, user?.id]);
+  }, [supabase, roomId, user?.id, displayName, activeBoardServerId]);
 
   function broadcastTyping(isTyping: boolean) {
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -566,7 +588,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} onSelectRoom={selectRoom} onSelectBoard={selectBoard} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
-      <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={roomId} supabase={supabase} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
+      <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={roomId} onlineCount={onlineCount} supabase={supabase} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} userName={displayName || 'ผู้เยี่ยมชม'} avatarUrl={user ? memberProfiles[user.id]?.avatar_url ?? null : null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
         : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
