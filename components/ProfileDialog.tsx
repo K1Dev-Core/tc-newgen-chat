@@ -59,7 +59,7 @@ export function ProfileDialog({ profile, editable, onClose, onSave, saving = fal
         <div className="profile-choice-heading"><strong>เลือกรูปโปรไฟล์</strong><span>{choices.length} รูป</span></div>
         {loading ? <div className="profile-choice-loading"><LoaderCircle size={16} /> กำลังโหลดรูป…</div> : loadError ? <p className="profile-choice-error">{loadError}</p> : <div className="profile-choice-grid" aria-label="เลือกรูปโปรไฟล์">
           {choices.map((choice) => <button type="button" key={choice.id} className={`profile-choice ${avatarUrl === choice.imageUrl ? 'selected' : ''}`} onClick={() => setAvatarUrl(choice.imageUrl)} aria-label={choice.name} aria-pressed={avatarUrl === choice.imageUrl} title={choice.name}>
-            <img src={choice.imageUrl} alt="" loading="lazy" />{avatarUrl === choice.imageUrl && <span className="profile-choice-check"><Check size={12} /></span>}
+            <img src={choice.imageUrl} alt="" loading="lazy" /><span className="profile-choice-name">{choice.name}</span>{avatarUrl === choice.imageUrl && <span className="profile-choice-check"><Check size={12} /></span>}
           </button>)}
         </div>}
         <div className="profile-dialog-actions">
