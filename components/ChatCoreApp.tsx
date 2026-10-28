@@ -472,9 +472,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       <img src={activeSfx.item.gif} alt="" className="sfx-stage-gif" />
     </div>}
     {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
-      <span className="mini-sfx-vinyl" aria-hidden="true"><i /></span>
-      <span className="mini-sfx-copy"><strong>{activeSfx.item.name}</strong><small>เล่นโดย {activeSfx.sender}</small></span>
-      <span className="mini-sfx-bars" aria-hidden="true"><i /><i /><i /><i /></span>
+      <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>
     </aside>}
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
