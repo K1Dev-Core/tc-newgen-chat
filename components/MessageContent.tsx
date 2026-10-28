@@ -1,4 +1,10 @@
+ 'use client';
+
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Download, File as FileIcon, X } from 'lucide-react';
 import { CodeBlock } from './CodeBlock';
+import { formatFileSize, getChatFileUrls, parseChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -23,11 +29,36 @@ function splitMessage(content: string): MessagePart[] {
 }
 
 export function MessageContent({ content }: { content: string }) {
+  const { text, files } = parseChatContent(content);
+  const [activeImage, setActiveImage] = useState<ChatFileAttachment | null>(null);
+
+  useEffect(() => {
+    if (!activeImage) return;
+    function onKeyDown(event: KeyboardEvent) { if (event.key === 'Escape') setActiveImage(null); }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeImage]);
+
   return <div className="group-message-bubble message-content">
-    {splitMessage(content).map((part, index) => part.type === 'code'
+    {splitMessage(text).map((part, index) => part.type === 'code'
       ? <CodeBlock key={`code-${index}`} code={part.value} language={part.language} />
       : part.value
         ? <p className="message-text" key={`text-${index}`}>{part.value}</p>
         : null)}
+    {files.length > 0 && <div className="chat-attachments">{files.map((file) => {
+      const urls = getChatFileUrls(file);
+      return urls.preview
+        ? <article className="chat-image-attachment" key={file.id}>
+          <button type="button" className="chat-image-preview-button" aria-label={`ดูรูป ${file.filename} เต็มจอ`} onClick={() => setActiveImage(file)}><img src={urls.preview} alt={file.filename} loading="lazy" /></button>
+          <div className="chat-file-caption"><span title={file.filename}>{file.filename}<small>{formatFileSize(file.size)}</small></span><a href={urls.download} aria-label={`ดาวน์โหลด ${file.filename}`} title="ดาวน์โหลด"><Download size={15} /></a></div>
+        </article>
+        : <a className="chat-file-card" href={urls.download} key={file.id} aria-label={`ดาวน์โหลด ${file.filename}`}>
+          <span className="chat-file-icon"><FileIcon size={18} /></span><span className="chat-file-details"><strong title={file.filename}>{file.filename}</strong><small>{file.mimeType || 'ไฟล์'} · {formatFileSize(file.size)}</small></span><Download className="chat-file-download" size={16} />
+        </a>;
+    })}</div>}
+    {activeImage && createPortal(<div className="chat-image-modal" role="dialog" aria-modal="true" aria-label={`รูป ${activeImage.filename}`} onClick={() => setActiveImage(null)}>
+      <header className="chat-image-modal-toolbar" onClick={(event) => event.stopPropagation()}><span title={activeImage.filename}>{activeImage.filename}</span><a href={getChatFileUrls(activeImage).download}><Download size={17} /> ดาวน์โหลด</a><button type="button" aria-label="ปิดรูป" onClick={() => setActiveImage(null)}><X size={20} /></button></header>
+      <img src={getChatFileUrls(activeImage).preview ?? ''} alt={activeImage.filename} onClick={(event) => event.stopPropagation()} />
+    </div>, document.body)}
   </div>;
 }

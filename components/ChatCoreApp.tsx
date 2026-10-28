@@ -14,6 +14,8 @@ import { JoinChatDialog } from './JoinChatDialog';
 import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ViewId } from '@/lib/types';
+import { serializeChatContent, type ChatFileAttachment } from '@/lib/chat-files';
+import { uploadChatFile } from '@/lib/file-upload-client';
 
 const ROOM_SLUG = 'nok-phirab-sue-sarn';
 
@@ -343,23 +345,38 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     }
   }
 
-  async function sendMessage(text: string) {
-    if (!user || !displayName || !roomId) return;
+  async function uploadFile(file: File, onProgress: (percentage: number) => void) {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session || !displayName) throw new Error('เข้าร่วมแชทก่อนจึงจะอัปโหลดไฟล์ได้');
+    return uploadChatFile(file, data.session.access_token, onProgress);
+  }
+
+  async function sendMessage(text: string, files: ChatFileAttachment[] = []): Promise<boolean> {
+    if (!user || !displayName || !roomId) return false;
+    const content = serializeChatContent(text, files);
+    if (new TextEncoder().encode(content).byteLength > 180000) {
+      notify('ข้อความและข้อมูลไฟล์ต้องมีขนาดไม่เกิน 180 KB');
+      return false;
+    }
     setSendingMessage(true);
     try {
       const { data, error } = await supabase.from('messages').insert({
         room_id: roomId,
         sender_id: user.id,
         sender_name: displayName,
-        content: text,
+        content,
       }).select('id,sender_id,sender_name,content,created_at').single();
 
       if (error || !data) {
         notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
-        return;
+        return false;
       }
       const message = toChatMessage(data as MessageRow, user.id);
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      return true;
+    } catch {
+      notify('ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
+      return false;
     } finally {
       setSendingMessage(false);
     }
@@ -371,7 +388,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <main className="main-area">
       <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
+      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} />
     </main>
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
