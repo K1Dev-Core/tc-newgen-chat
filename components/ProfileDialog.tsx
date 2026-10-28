@@ -1,18 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, LoaderCircle, X } from 'lucide-react';
+import { Check, LoaderCircle, LogOut, X } from 'lucide-react';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 
 type ProfileChoice = { id: string; name: string; imageUrl: string; alt: string };
 export type MemberProfile = { id: string; display_name: string; avatar_url: string | null };
 
-export function ProfileDialog({ profile, editable, onClose, onSave, saving = false }: {
+export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, saving = false }: {
   profile: MemberProfile;
   editable: boolean;
   onClose: () => void;
   onSave?: (name: string, avatarUrl: string | null) => void;
+  onSignOut?: () => void;
   saving?: boolean;
 }) {
   const [name, setName] = useState(profile.display_name);
@@ -63,6 +64,7 @@ export function ProfileDialog({ profile, editable, onClose, onSave, saving = fal
           </button>)}
         </div>}
         <div className="profile-dialog-actions">
+          <button type="button" className="profile-signout" disabled={saving} onClick={onSignOut}><LogOut size={13} /> ออกจากระบบ</button>
           <button type="button" className="profile-cancel" onClick={onClose}>ยกเลิก</button>
           <button type="button" className="profile-save" disabled={!name.trim() || saving} onClick={() => onSave?.(name, avatarUrl)}>{saving ? 'กำลังบันทึก…' : 'บันทึกโปรไฟล์'}</button>
         </div>

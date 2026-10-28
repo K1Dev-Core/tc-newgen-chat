@@ -327,6 +327,19 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     }
   }
 
+  async function signOut() {
+    setActionLoading(true);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) { notify('ออกจากระบบไม่สำเร็จ ลองอีกครั้ง'); return; }
+      setActiveProfile(null);
+      setDisplayName('');
+      notify('ออกจากระบบแล้ว');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function sendMessage(text: string) {
     if (!user || !displayName || !roomId) return;
     setSendingMessage(true);
@@ -358,7 +371,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
-    {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} saving={actionLoading} />}
+    {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />
   </div>;
 }
