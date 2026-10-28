@@ -6,7 +6,7 @@ Next.js 16 group chat using Supabase Auth, Postgres, and Realtime. Visitors can 
 
 1. Create a Supabase project.
 2. In **Authentication → Sign In / Providers**, enable **Allow anonymous sign-ins**. The app only asks people for a display name.
-3. Run [`supabase/migrations/20261028000000_group_chat.sql`](supabase/migrations/20261028000000_group_chat.sql) in the Supabase SQL Editor. It creates `profiles`, `servers`, `chat_rooms`, and `messages`, seeds `TC / นกพิราบสื่อสาร`, enables RLS, and adds `messages` to the Realtime publication.
+3. Run all SQL files in `supabase/migrations` in filename order in the Supabase SQL Editor. The initial migration creates `profiles`, `servers`, `chat_rooms`, and `messages`, seeds `TC / นกพิราบสื่อสาร`, enables RLS, and adds `messages` to the Realtime publication. The follow-up raises the message byte limit for code snippets.
 4. Copy `.env.example` to `.env.local` and set the project's URL and publishable key:
 
 ```env
@@ -31,6 +31,7 @@ npm run dev
 - Enter a name: Supabase creates an anonymous session in the background; the profile name is saved and the sender can post.
 - Messages are stored in Postgres and delivered to open clients using Supabase Realtime Postgres Changes.
 - A temporary Realtime Broadcast indicator shows who is typing; it lists up to three names and switches to a group indicator for four or more people.
+- Messages support fenced code blocks with language hints or automatic language detection, syntax highlighting, copy controls, and expand/collapse for long snippets. Use the composer’s **โค้ด** button to wrap pasted code before sending.
 - Profile image URLs can be added to `profiles.avatar_url` later and can point to the separate profile image CDN project.
 
 This room is intentionally public-read to support visitors without login. Display names are not verified, and a user can choose a name already used by someone else. Do not use this setup for private conversations or sensitive data.

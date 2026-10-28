@@ -38,7 +38,7 @@ create table if not exists public.messages (
   room_id uuid not null references public.chat_rooms (id) on delete cascade,
   sender_id uuid references auth.users (id) on delete set null,
   sender_name text not null check (char_length(btrim(sender_name)) between 1 and 32),
-  content text not null check (char_length(btrim(content)) between 1 and 4000),
+  content text not null constraint messages_content_length_check check (char_length(btrim(content)) > 0 and octet_length(content) <= 180000),
   created_at timestamptz not null default now()
 );
 

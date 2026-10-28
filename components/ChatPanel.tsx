@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { ChatMessage, ViewId } from '@/lib/types';
+import { MessageContent } from './MessageContent';
 
 export function ChatPanel({ activeView, messages, typingNames }: { activeView: ViewId; messages: ChatMessage[]; typingNames: string[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -22,7 +23,7 @@ export function ChatPanel({ activeView, messages, typingNames }: { activeView: V
         {message.role === 'friend' && <div className={`member-avatar avatar-${message.tone}`} aria-hidden="true">{message.avatar}</div>}
         <div className="group-message-content">
           <div className="member-line"><strong>{message.sender}</strong><time>{message.time}</time></div>
-          <div className="group-message-bubble">{message.text}</div>
+        <MessageContent content={message.text} />
         </div>
         {message.role === 'self' && <div className={`member-avatar avatar-${message.tone}`} aria-hidden="true">{message.avatar}</div>}
       </article>)}
