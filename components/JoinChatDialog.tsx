@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { Dices, LoaderCircle, X } from 'lucide-react';
+import { Dices, LoaderCircle, Sparkles, X } from 'lucide-react';
 import type { MemberProfile } from './ProfileDialog';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
@@ -67,6 +67,7 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
   }
 
   const initial = Array.from(name.trim())[0]?.toLocaleUpperCase() ?? '?';
+  const selectedProfile = choices.find((choice) => choice.imageUrl === avatarUrl);
   return <div className="profile-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
     <section className="profile-dialog join-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="join-chat-title">
       <header className="profile-dialog-header">
@@ -76,7 +77,7 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
       <form onSubmit={submit}>
         <div className="profile-preview">
           {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{initial}</span>}
-          <div><strong>{name || 'ตั้งชื่อให้เพื่อนจำได้'}</strong><small>ชื่อและรูปนี้จะปรากฏข้างข้อความของคุณ</small></div>
+          <div><strong>{name || 'ตั้งชื่อให้เพื่อนจำได้'}</strong>{selectedProfile && <span className="profile-alias-tag"><Sparkles size={11} /> ฉายา · {selectedProfile.name}</span>}<small>ชื่อและรูปนี้จะปรากฏข้างข้อความของคุณ</small></div>
         </div>
         <div className="join-name-heading"><label className="profile-name-label" htmlFor="join-display-name">ชื่อที่แสดง</label><button type="button" className="randomize-profile" onClick={randomize} disabled={loading || !choices.length}><Dices size={15} /> สุ่มชื่อ + โปรไฟล์</button></div>
         <input className="profile-name-input" id="join-display-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} placeholder="เช่น พิราบสายลม" autoComplete="nickname" autoFocus />

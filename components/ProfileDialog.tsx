@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Check, LoaderCircle, LogOut, X } from 'lucide-react';
+import { Check, LoaderCircle, LogOut, Sparkles, X } from 'lucide-react';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 
@@ -43,6 +43,7 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
 
   const activeName = editable ? name : profile.display_name;
   const activeAvatar = editable ? avatarUrl : profile.avatar_url;
+  const selectedProfile = choices.find((choice) => choice.imageUrl === activeAvatar);
 
   return <div className="profile-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title">
@@ -52,7 +53,7 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
       </header>
       <div className="profile-preview">
         {activeAvatar ? <img src={activeAvatar} alt="" /> : <span>{Array.from(activeName.trim())[0]?.toLocaleUpperCase() ?? '?'}</span>}
-        <div><strong>{activeName || 'ยังไม่ได้ตั้งชื่อ'}</strong><small>{editable ? 'รูปและชื่อจะแสดงให้สมาชิกทุกคนเห็น' : 'สมาชิกในห้อง # นกพิราบสื่อสาร'}</small></div>
+        <div><strong>{activeName || 'ยังไม่ได้ตั้งชื่อ'}</strong>{selectedProfile && <span className="profile-alias-tag"><Sparkles size={11} /> ฉายา · {selectedProfile.name}</span>}<small>{editable ? 'รูปและชื่อจะแสดงให้สมาชิกทุกคนเห็น' : 'สมาชิกในห้อง # นกพิราบสื่อสาร'}</small></div>
       </div>
       {editable ? <>
         <label className="profile-name-label" htmlFor="profile-display-name">ชื่อที่แสดง</label>
