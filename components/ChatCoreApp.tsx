@@ -452,10 +452,14 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
     </main>
-    {activeSfx && <div key={activeSfx.eventId} className="sfx-stage" aria-live="polite" role="status">
-      {activeSfx.item.gif && <img src={activeSfx.item.gif} alt="" className="sfx-stage-gif" />}
-      <div className="sfx-stage-label"><span>{activeSfx.item.emoji}</span><strong>{activeSfx.item.name}</strong><small>เล่นโดย {activeSfx.sender}</small></div>
+    {activeSfx?.item.gif && <div key={activeSfx.eventId} className="sfx-stage" aria-hidden="true">
+      <img src={activeSfx.item.gif} alt="" className="sfx-stage-gif" />
     </div>}
+    {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
+      <span className="mini-sfx-vinyl" aria-hidden="true"><i /></span>
+      <span className="mini-sfx-copy"><strong>{activeSfx.item.name}</strong><small>เล่นโดย {activeSfx.sender}</small></span>
+      <span className="mini-sfx-bars" aria-hidden="true"><i /><i /><i /><i /></span>
+    </aside>}
     {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
     {joinDialogOpen && <JoinChatDialog onClose={() => setJoinDialogOpen(false)} onJoin={setName} saving={actionLoading} />}
