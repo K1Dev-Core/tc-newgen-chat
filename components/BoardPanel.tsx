@@ -19,7 +19,8 @@ const EMPTY_SCENE: ExcalidrawInitialDataState = {
   appState: {},
   files: {},
 };
-const MAX_SCENE_BYTES = 220 * 1024;
+// Leave headroom below Supabase Realtime's 1 MB Postgres-change payload limit.
+const MAX_SCENE_BYTES = 900 * 1024;
 
 type BoardRow = { server_id: string; scene: ExcalidrawInitialDataState; updated_by: string | null; updated_at: string };
 type SaveState = 'loading' | 'ready' | 'saving' | 'saved' | 'error';
@@ -110,7 +111,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, on
             setSaveState('error');
             if (!errorNotifiedRef.current) {
               errorNotifiedRef.current = true;
-              onNotify('บอร์ดมีข้อมูลเกิน 220 KB ลองลดขนาดหรือลบรูปที่แนบก่อนบันทึก');
+              onNotify('บอร์ดมีข้อมูลเกิน 900 KB ลองลดขนาดหรือลบรูปที่แนบก่อนบันทึก');
             }
             return;
           }
