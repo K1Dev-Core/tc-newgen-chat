@@ -40,6 +40,7 @@ type SfxPayload = {
   event_id: string;
   sfx_id: string;
   sender_name: string;
+  client_id: string;
 };
 
 function toChatMessage(row: MessageRow, currentUserId?: string): ChatMessage {
@@ -113,8 +114,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const clientIdRef = useRef('');
   const sfxTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sfxGifTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
   const seenSfxEventsRef = useRef(new Set<string>());
-  const pendingSfxRef = useRef<string[]>([]);
   const sfxCooldownUntilRef = useRef(0);
 
   useEffect(() => {
@@ -126,53 +127,49 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, []);
 
   useEffect(() => {
-    const playPendingSfx = () => {
-      const pending = pendingSfxRef.current.splice(0);
-      pending.forEach((url) => {
-        const audio = new Audio(url);
-        void audio.play().catch(() => { pendingSfxRef.current.unshift(url); });
-      });
-    };
-    window.addEventListener('pointerdown', playPendingSfx);
-    window.addEventListener('keydown', playPendingSfx);
-    return () => {
-      window.removeEventListener('pointerdown', playPendingSfx);
-      window.removeEventListener('keydown', playPendingSfx);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!sfxCooldownRemaining) return;
     const interval = setInterval(() => setSfxCooldownRemaining((remaining) => Math.max(0, remaining - 100)), 100);
     return () => clearInterval(interval);
   }, [sfxCooldownRemaining > 0]);
 
   function playSfx(item: RemoteSfxItem, sender: string, eventId: string) {
-    if (seenSfxEventsRef.current.has(eventId)) return;
+    if (!eventId || seenSfxEventsRef.current.has(eventId)) return;
     seenSfxEventsRef.current.add(eventId);
     if (seenSfxEventsRef.current.size > 200) {
       const oldestEvent = seenSfxEventsRef.current.values().next().value;
       if (oldestEvent) seenSfxEventsRef.current.delete(oldestEvent);
     }
     if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
+    sfxTimeoutRef.current = null;
+    if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
+    sfxGifTimeoutRef.current = null;
     setActiveSfx({ item, sender, eventId });
     const displayDuration = Math.min(Math.max(item.holdMs ?? 3600, 1000), 10_000);
     sfxTimeoutRef.current = setTimeout(() => {
       setActiveSfx((current) => current?.eventId === eventId ? null : current);
       sfxTimeoutRef.current = null;
     }, displayDuration);
+    setActiveSfxGif(null);
     if (item.gif) {
-      if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
       setActiveSfxGif({ item, sender, eventId });
       sfxGifTimeoutRef.current = setTimeout(() => {
         setActiveSfxGif((current) => current?.eventId === eventId ? null : current);
         sfxGifTimeoutRef.current = null;
       }, displayDuration);
     }
+    // Stop any previous clip so broadcasts from different members cannot stack
+    // and sound like one SFX was played repeatedly.
+    if (sfxAudioRef.current) {
+      sfxAudioRef.current.pause();
+      sfxAudioRef.current.currentTime = 0;
+    }
     const audio = new Audio(item.url);
+    audio.loop = false;
     audio.preload = 'auto';
-    void audio.play().catch(() => {
-      pendingSfxRef.current = [...pendingSfxRef.current.slice(-2), item.url];
+    sfxAudioRef.current = audio;
+    void audio.play().catch((error: unknown) => {
+      if (sfxAudioRef.current === audio) sfxAudioRef.current = null;
+      console.debug('[SFX] Playback was blocked; it will not be queued for a later replay.', error);
     });
   }
 
@@ -297,6 +294,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       setTypingNames(Array.from(typingClientsRef.current.values(), (entry) => entry.name));
     }).on('broadcast', { event: 'sfx' }, ({ payload }) => {
       const sfx = payload as SfxPayload;
+      if (sfx?.client_id && sfx.client_id === clientIdRef.current) return;
       const item = SFX_CATALOG.find((entry) => entry.id === sfx?.sfx_id);
       if (!item || !sfx.event_id || !sfx.sender_name) return;
       playSfx(item, sfx.sender_name, sfx.event_id);
@@ -339,7 +337,14 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       typingClientsRef.current.forEach(({ timeout }) => clearTimeout(timeout));
       typingClientsRef.current.clear();
       if (sfxTimeoutRef.current) clearTimeout(sfxTimeoutRef.current);
+      sfxTimeoutRef.current = null;
       if (sfxGifTimeoutRef.current) clearTimeout(sfxGifTimeoutRef.current);
+      sfxGifTimeoutRef.current = null;
+      if (sfxAudioRef.current) {
+        sfxAudioRef.current.pause();
+        sfxAudioRef.current.currentTime = 0;
+        sfxAudioRef.current = null;
+      }
       setActiveSfx(null);
       setActiveSfxGif(null);
       typingChannelRef.current = null;
@@ -404,7 +409,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     const result = await channel.send({
       type: 'broadcast',
       event: 'sfx',
-      payload: { event_id: eventId, sfx_id: item.id, sender_name: displayName } satisfies SfxPayload,
+      payload: { event_id: eventId, sfx_id: item.id, sender_name: displayName, client_id: clientIdRef.current } satisfies SfxPayload,
     });
     if (result !== 'ok') notify('เสียงเล่นในเครื่องแล้ว แต่ส่งไปยังสมาชิกคนอื่นไม่สำเร็จ ลองอีกครั้ง');
   }
