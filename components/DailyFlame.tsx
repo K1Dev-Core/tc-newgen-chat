@@ -71,25 +71,21 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
         return;
       }
       if (celebrationTimerRef.current) return;
+      // Record immediately when shown so a refresh, tab switch, or account
+      // change during the animation cannot replay it on this device today.
+      seenRef.current.add(seenKey);
+      try { window.localStorage.setItem(seenKey, 'seen'); } catch { /* In-memory receipt still prevents repeats in this tab. */ }
       setCelebration({ name: row.today_fueled_name ?? 'เพื่อนในห้อง', key: Date.now() });
       celebrationTimerRef.current = setTimeout(() => {
         celebrationTimerRef.current = null;
         setCelebration(null);
-        // Count it as seen only after the full overlay was actually visible.
-        // If the tab was backgrounded, let the next visible visit show it.
-        if (document.visibilityState === 'visible') {
-          seenRef.current.add(seenKey);
-          try { window.localStorage.setItem(seenKey, 'seen'); } catch { /* In-memory receipt still prevents repeats in this tab. */ }
-        } else {
-          pendingCelebrationRef.current = row;
-        }
       }, 5_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
       if (!alive) return;
       const previousDate = latestRef.current?.last_fueled_date;
-      const isFirstFuelUpdateToday = row.last_fueled_date === bangkokDate() && previousDate !== row.last_fueled_date;
+      const isFirstFuelUpdateToday = fromRealtime && row.last_fueled_date === bangkokDate() && previousDate != null && previousDate !== row.last_fueled_date;
       latestRef.current = row;
       setFlame(row);
       // A transition into today's fuel date is the event everyone in the room
