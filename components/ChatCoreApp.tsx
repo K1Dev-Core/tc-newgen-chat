@@ -19,7 +19,7 @@ import { uploadChatFile } from '@/lib/file-upload-client';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 const ROOM_SLUG = 'nok-phirab-sue-sarn';
-const SFX_COOLDOWN_MS = 3000;
+const SFX_COOLDOWN_MS = 30_000;
 
 type MessageRow = {
   id: string;
