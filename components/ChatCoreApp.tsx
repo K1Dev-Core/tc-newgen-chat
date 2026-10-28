@@ -9,6 +9,8 @@ import { ChatPanel } from './ChatPanel';
 import { Composer } from './Composer';
 import { Toast } from './Toast';
 import { LoadingOverlay } from './LoadingOverlay';
+import { ProfileDialog } from './ProfileDialog';
+import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 import type { ChatMessage, ViewId } from '@/lib/types';
 
@@ -71,6 +73,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [displayName, setDisplayName] = useState('');
+  const [memberProfiles, setMemberProfiles] = useState<Record<string, MemberProfile>>({});
+  const [activeProfile, setActiveProfile] = useState<{ profile: MemberProfile; editable: boolean } | null>(null);
   const [roomId, setRoomId] = useState('');
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -119,13 +123,39 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       return () => { alive = false; };
     }
     setProfileLoading(true);
-    void supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle().then(({ data, error }) => {
+    void supabase.from('profiles').select('id,display_name,avatar_url').eq('id', user.id).maybeSingle().then(({ data, error }) => {
       if (!alive) return;
       if (error) notify('โหลดชื่อโปรไฟล์ไม่สำเร็จ');
       setDisplayName(data?.display_name && data.display_name !== 'Guest' ? data.display_name : '');
+      if (data) setMemberProfiles((current) => ({ ...current, [data.id]: data as MemberProfile }));
       setProfileLoading(false);
     });
     return () => { alive = false; };
+  }, [supabase, user?.id]);
+
+  useEffect(() => {
+    let alive = true;
+    const applyProfile = (row: MemberProfile) => {
+      setMemberProfiles((current) => ({ ...current, [row.id]: row }));
+      if (row.id === user?.id) setDisplayName(row.display_name === 'Guest' ? '' : row.display_name);
+    };
+    void supabase.from('profiles').select('id,display_name,avatar_url').then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { notify('โหลดโปรไฟล์สมาชิกไม่สำเร็จ'); return; }
+      (data as MemberProfile[] | null)?.forEach(applyProfile);
+    });
+    const channel = supabase.channel('member-profile-updates').on('postgres_changes',
+      { event: '*', schema: 'public', table: 'profiles' },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          const row = payload.old as Partial<MemberProfile>;
+          if (row.id) setMemberProfiles((current) => { const next = { ...current }; delete next[row.id!]; return next; });
+          return;
+        }
+        applyProfile(payload.new as MemberProfile);
+      },
+    ).subscribe();
+    return () => { alive = false; void supabase.removeChannel(channel); };
   }, [supabase, user?.id]);
 
   useEffect(() => {
@@ -271,7 +301,26 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         return;
       }
       setDisplayName(normalized);
+      setMemberProfiles((current) => ({ ...current, [activeUser!.id]: { id: activeUser!.id, display_name: normalized, avatar_url: current[activeUser!.id]?.avatar_url ?? null } }));
       notify(`เข้าร่วมแชตในชื่อ ${normalized}`);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function saveProfile(name: string, avatarUrl: string | null) {
+    if (!user) return;
+    const normalized = name.trim().replace(/\s+/g, ' ');
+    if (normalized.length < 1 || normalized.length > 32) { notify('ชื่อต้องมีความยาว 1–32 ตัวอักษร'); return; }
+    setActionLoading(true);
+    try {
+      const { error } = await supabase.from('profiles').update({ display_name: normalized, avatar_url: avatarUrl }).eq('id', user.id);
+      if (error) { notify('บันทึกโปรไฟล์ไม่สำเร็จ ตรวจ migration และ RLS policy'); return; }
+      const profile = { id: user.id, display_name: normalized, avatar_url: avatarUrl };
+      setDisplayName(normalized);
+      setMemberProfiles((current) => ({ ...current, [user.id]: profile }));
+      setActiveProfile(null);
+      notify('อัปเดตโปรไฟล์แล้ว สมาชิกทุกคนจะเห็นการเปลี่ยนแปลงทันที');
     } finally {
       setActionLoading(false);
     }
@@ -303,11 +352,12 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     <Sidebar activeView={activeView} onNavigate={(view) => { setActiveView(view); setMobileSidebarOpen(false); }} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} projectOpen={projectOpen} onToggleProject={() => setProjectOpen((open) => !open)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
-      <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} />
-      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} />}
+      <Topbar onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
+      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel activeView={activeView} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
       <Composer displayName={displayName} canSend={Boolean(user && displayName && roomId && !roomError)} onSetName={setName} onSend={sendMessage} onNotify={notify} onTyping={broadcastTyping} />
     </main>
     {(loading || profileLoading || actionLoading) && <LoadingOverlay label={actionLoading ? 'กำลังส่งข้อมูล…' : profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
+    {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />
   </div>;
 }

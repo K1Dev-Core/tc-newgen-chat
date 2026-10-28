@@ -3,8 +3,9 @@
 import { useEffect, useRef } from 'react';
 import type { ChatMessage, ViewId } from '@/lib/types';
 import { MessageContent } from './MessageContent';
+import type { MemberProfile } from './ProfileDialog';
 
-export function ChatPanel({ activeView, messages, typingNames }: { activeView: ViewId; messages: ChatMessage[]; typingNames: string[] }) {
+export function ChatPanel({ activeView, messages, typingNames, memberProfiles, onOpenProfile }: { activeView: ViewId; messages: ChatMessage[]; typingNames: string[]; memberProfiles: Record<string, MemberProfile>; onOpenProfile: (profile: MemberProfile) => void }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages.length]);
   const typingText = typingNames.length > 3
@@ -20,12 +21,12 @@ export function ChatPanel({ activeView, messages, typingNames }: { activeView: V
   return <section className="conversation" aria-label={`Messages in #${activeView === 'Chat' ? 'chat' : 'server'}`}>
     <div className="message-list group-message-list">
       {messages.map((message) => <article className={`group-message ${message.role === 'self' ? 'own-message' : ''}`} key={message.id}>
-        {message.role === 'friend' && <div className={`member-avatar avatar-${message.tone}`} aria-hidden="true">{message.avatar}</div>}
+        {message.role === 'friend' && <button type="button" className={`member-avatar avatar-${message.tone}`} aria-label={`ดูโปรไฟล์ ${memberProfiles[message.senderId ?? '']?.display_name ?? message.sender}`} onClick={() => { const profile = message.senderId ? memberProfiles[message.senderId] : undefined; if (profile) onOpenProfile(profile); }}>{memberProfiles[message.senderId ?? '']?.avatar_url ? <img src={memberProfiles[message.senderId ?? ''].avatar_url!} alt="" /> : message.avatar}</button>}
         <div className="group-message-content">
-          <div className="member-line"><strong>{message.sender}</strong><time>{message.time}</time></div>
-        <MessageContent content={message.text} />
+          <div className="member-line"><button type="button" className="member-name-button" onClick={() => { const profile = message.senderId ? memberProfiles[message.senderId] : undefined; if (profile) onOpenProfile(profile); }}>{memberProfiles[message.senderId ?? '']?.display_name ?? message.sender}</button><time>{message.time}</time></div>
+          <MessageContent content={message.text} />
         </div>
-        {message.role === 'self' && <div className={`member-avatar avatar-${message.tone}`} aria-hidden="true">{message.avatar}</div>}
+        {message.role === 'self' && <button type="button" className={`member-avatar avatar-${message.tone}`} aria-label="แก้ไขโปรไฟล์ของฉัน" onClick={() => { const profile = message.senderId ? memberProfiles[message.senderId] : undefined; if (profile) onOpenProfile(profile); }}>{memberProfiles[message.senderId ?? '']?.avatar_url ? <img src={memberProfiles[message.senderId ?? ''].avatar_url!} alt="" /> : message.avatar}</button>}
       </article>)}
       {messages.length === 0 && <p className="no-chat-messages">ยังไม่มีข้อความในห้องนี้ เริ่มคุยกันได้เลย</p>}
       {typingText && <div className="typing-indicator" role="status" aria-live="polite">

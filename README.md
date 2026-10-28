@@ -6,7 +6,7 @@ Next.js 16 group chat using Supabase Auth, Postgres, and Realtime. Visitors can 
 
 1. Create a Supabase project.
 2. In **Authentication → Sign In / Providers**, enable **Allow anonymous sign-ins**. The app only asks people for a display name.
-3. Run all SQL files in `supabase/migrations` in filename order in the Supabase SQL Editor. The initial migration creates `profiles`, `servers`, `chat_rooms`, and `messages`, seeds `TC / นกพิราบสื่อสาร`, enables RLS, and adds `messages` to the Realtime publication. The follow-up raises the message byte limit for code snippets.
+3. Run all SQL files in `supabase/migrations` in filename order in the Supabase SQL Editor. The migrations create `profiles`, `servers`, `chat_rooms`, and `messages`, seed `TC / นกพิราบสื่อสาร`, enable RLS, publish chat messages and member profile changes to Realtime, and raise the message byte limit for code snippets.
 4. Copy `.env.example` to `.env.local` and set the project's URL and publishable key:
 
 ```env
@@ -30,6 +30,7 @@ npm run dev
 - No name: the room is readable, but the message box is disabled.
 - Enter a name: Supabase creates an anonymous session in the background; the profile name is saved and the sender can post.
 - Messages are stored in Postgres and delivered to open clients using Supabase Realtime Postgres Changes.
+- Profile names and avatar URLs are stored in `profiles`; profile edits are sent to every open client through Supabase Realtime. The picker reads the public catalog from `https://profile-image-cdn.vercel.app/api/profiles`.
 - A temporary Realtime Broadcast indicator shows who is typing; it lists up to three names and switches to a group indicator for four or more people.
 - Messages support fenced code blocks with language hints or automatic language detection, syntax highlighting, copy controls, and expand/collapse for long snippets. Use the composer’s **โค้ด** button to wrap pasted code before sending.
 - Profile image URLs can be added to `profiles.avatar_url` later and can point to the separate profile image CDN project.
