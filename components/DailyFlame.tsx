@@ -41,16 +41,30 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
     setFlame(null);
     setCelebration(null);
 
-    // v2 intentionally lets everyone see today's overlay once after this fix;
-    // older builds wrote the receipt as soon as the overlay started, so a
-    // missed/hidden overlay could permanently suppress it for the day.
-    const celebrationSeenKey = (date: string) => `tc-newgen:daily-flame-seen:v2:${roomId}:${viewerId ?? 'guest'}:${date}`;
+    // Store the receipt per device, room, and Bangkok date so switching
+    // accounts in the same browser does not replay an already-seen overlay.
+    const celebrationSeenKey = (date: string) => `tc-newgen:daily-flame-seen:v3:${roomId}:${date}`;
     const showCelebrationIfUnseen = (row: FlameRow, force = false) => {
       const date = row.last_fueled_date;
       if (!date || date !== bangkokDate()) return;
       const seenKey = celebrationSeenKey(date);
       let alreadySeen = seenRef.current.has(seenKey);
-      try { alreadySeen ||= window.localStorage.getItem(seenKey) === 'seen'; } catch { /* Keep this tab's in-memory receipt. */ }
+      try {
+        alreadySeen ||= window.localStorage.getItem(seenKey) === 'seen';
+        // Migrate any per-account receipt from the previous version into this
+        // device-level key to avoid replaying today's celebration on upgrade.
+        if (!alreadySeen) {
+          const legacyPrefix = `tc-newgen:daily-flame-seen:v2:${roomId}:`;
+          for (let index = 0; index < window.localStorage.length; index += 1) {
+            const key = window.localStorage.key(index);
+            if (key?.startsWith(legacyPrefix) && key.endsWith(`:${date}`) && window.localStorage.getItem(key) === 'seen') {
+              alreadySeen = true;
+              window.localStorage.setItem(seenKey, 'seen');
+              break;
+            }
+          }
+        }
+      } catch { /* Keep this tab's in-memory receipt. */ }
       if (alreadySeen && !force) return;
       if (document.visibilityState !== 'visible') {
         pendingCelebrationRef.current = row;
