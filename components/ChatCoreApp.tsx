@@ -6,6 +6,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ChatPanel } from './ChatPanel';
+import { BoardPanel } from './BoardPanel';
 import { Composer } from './Composer';
 import { Toast } from './Toast';
 import { LoadingOverlay } from './LoadingOverlay';
@@ -124,6 +125,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [servers, setServers] = useState<ChatServer[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [activeRoomSlug, setActiveRoomSlug] = useState(DEFAULT_ROOM_SLUG);
+  const [activeBoardServerId, setActiveBoardServerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
@@ -132,7 +134,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [activeProfile, setActiveProfile] = useState<{ profile: MemberProfile; editable: boolean } | null>(null);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const activeRoom = rooms.find((room) => room.slug === activeRoomSlug);
-  const activeServer = activeRoom ? servers.find((server) => server.id === activeRoom.server_id) : undefined;
+  const activeBoardServer = activeBoardServerId ? servers.find((server) => server.id === activeBoardServerId) : undefined;
+  const activeServer = activeBoardServer ?? (activeRoom ? servers.find((server) => server.id === activeRoom.server_id) : undefined);
   const roomId = activeRoom?.id ?? '';
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -322,12 +325,18 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, [supabase]);
 
   function selectRoom(slug: string) {
+    setActiveBoardServerId(null);
     if (slug === activeRoomSlug) { setMobileSidebarOpen(false); return; }
     setLoading(true);
     setRoomError('');
     setMessages([]);
     setTypingNames([]);
     setActiveRoomSlug(slug);
+    setMobileSidebarOpen(false);
+  }
+
+  function selectBoard(serverId: string) {
+    setActiveBoardServerId(serverId);
     setMobileSidebarOpen(false);
   }
 
@@ -581,12 +590,13 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
-    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} onSelectRoom={selectRoom} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
+    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} onSelectRoom={selectRoom} onSelectBoard={selectBoard} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
-      <Topbar serverName={activeServer?.name ?? ''} roomName={activeRoom?.name ?? ''} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
-      {roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />
+      <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
+      {activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
+        : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
+      {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
     </main>
     {activeSfxGif?.item.gif && <div key={activeSfxGif.eventId} className="sfx-stage" aria-hidden="true">
       <img src={activeSfxGif.item.gif} alt="" className="sfx-stage-gif" />

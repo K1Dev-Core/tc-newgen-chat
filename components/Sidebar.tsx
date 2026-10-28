@@ -1,11 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
 import type { ChatRoom, ChatServer } from '@/lib/types';
 import { PigeonLogo } from './PigeonLogo';
 
-export function Sidebar({ servers, rooms, activeRoomSlug, onSelectRoom, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; onSelectRoom: (slug: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
+export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
   const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   return <aside className="sidebar">
     <div className="brand-row"><PigeonLogo className="brand-mascot" /><span className="brand-name">ทีซี นิวเจน</span><button className="icon-button collapse-button" aria-label={collapsed ? 'Expand project sidebar' : 'Collapse project sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
@@ -23,7 +23,10 @@ export function Sidebar({ servers, rooms, activeRoomSlug, onSelectRoom, collapse
           <button className={`nav-item project-root ${active ? 'active' : ''}`} onClick={() => setExpandedServers((current) => ({ ...current, [server.id]: !expanded }))} aria-label={`${server.name} server`} aria-expanded={expanded} data-tooltip={server.name}>
             {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}<span>{server.name}</span>{expanded ? <ChevronDown size={14} className="nav-trailing" /> : <ChevronRight size={14} className="nav-trailing" />}
           </button>
-          {expanded && serverRooms.map((room) => <button className={`nav-item project-child ${activeRoomSlug === room.slug ? 'active' : ''}`} key={room.id} onClick={() => onSelectRoom(room.slug)} aria-label={`${room.name} channel`} data-tooltip={room.name}><Hash size={15} /><span>{room.name}</span></button>)}
+          {expanded && <>
+            {serverRooms.map((room) => <button className={`nav-item project-child ${!activeBoardServerId && activeRoomSlug === room.slug ? 'active' : ''}`} key={room.id} onClick={() => onSelectRoom(room.slug)} aria-label={`${room.name} channel`} data-tooltip={room.name}><Hash size={15} /><span>{room.name}</span></button>)}
+            <button className={`nav-item project-child server-board-link ${activeBoardServerId === server.id ? 'active' : ''}`} onClick={() => onSelectBoard(server.id)} aria-label={`${server.name} shared board`} data-tooltip="บอร์ด"><PencilRuler size={15} /><span>บอร์ด</span></button>
+          </>}
         </div>;
       })}
     </nav>

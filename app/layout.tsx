@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { preload } from 'react-dom';
+import '@excalidraw/excalidraw/index.css';
 import './globals.css';
 
 export const metadata: Metadata = {
