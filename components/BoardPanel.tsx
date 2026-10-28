@@ -39,6 +39,7 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, on
   const [boardError, setBoardError] = useState('');
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<(() => Promise<void>) | null>(null);
   const ignoreRemoteChangesRef = useRef(false);
   const errorNotifiedRef = useRef(false);
 
@@ -90,7 +91,13 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, on
 
     return () => {
       alive = false;
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      // Do not discard the last board edit when navigating away during the
+      // debounce window. The scene is captured in pendingSaveRef below.
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        void pendingSaveRef.current?.();
+      }
       saveTimerRef.current = null;
       void supabase.removeChannel(channel);
       apiRef.current = null;
@@ -101,11 +108,11 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, on
     if (!canEdit || !userId || ignoreRemoteChangesRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveState('saving');
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void (async () => {
+    const save = async () => {
         try {
-          const scene = JSON.parse((await import('@excalidraw/excalidraw')).serializeAsJSON(elements, appState, files, 'database')) as ExcalidrawInitialDataState;
+          // `database` serialization deliberately strips binary image files;
+          // use `local` so the image data is persisted with its elements.
+          const scene = JSON.parse((await import('@excalidraw/excalidraw')).serializeAsJSON(elements, appState, files, 'local')) as ExcalidrawInitialDataState;
           const sceneSize = new TextEncoder().encode(JSON.stringify(scene)).byteLength;
           if (sceneSize > MAX_SCENE_BYTES) {
             setSaveState('error');
@@ -132,7 +139,11 @@ export function BoardPanel({ serverId, serverName, supabase, canEdit, userId, on
             onNotify('บันทึกบอร์ดไม่สำเร็จ ตรวจสิทธิ์สมาชิกและการตั้งค่า Supabase');
           }
         }
-      })();
+    };
+    pendingSaveRef.current = save;
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void save();
     }, 700);
   }, [canEdit, userId, onNotify, supabase, serverId]);
 
