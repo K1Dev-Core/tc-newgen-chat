@@ -148,23 +148,47 @@ export async function POST(request: Request) {
       ...history.map(({ role, content }) => ({ role, content: role === 'assistant' ? stripThinkBlocks(content) : content })),
     ];
 
-    const response = await fetch('https://thaillm.or.th/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${thaiLlmApiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'openthaigpt-thaillm-8b-instruct-v7.2',
-        messages: modelMessages,
-        max_tokens: 2048,
-        temperature: 0.3,
-        stream: true,
-      }),
-      signal: AbortSignal.timeout(50_000),
-    });
-    if (!response.ok) {
-      await supabase.rpc('fail_ai_chat_job', { p_job_id: job.job_id, p_error: `AI ตอบกลับไม่สำเร็จ (HTTP ${response.status})` });
+    const upstreamSignal = AbortSignal.timeout(50_000);
+    const upstreams = [
+      { url: 'https://thaillm.or.th/api/v1/chat/completions', model: 'openthaigpt-thaillm-8b-instruct-v7.2', name: 'primary' },
+      { url: 'https://thaillm.or.th/api/openthaigpt/v1/chat/completions', model: '/model', name: 'fallback' },
+    ];
+    let response: Response | null = null;
+    for (const [upstreamIndex, upstream] of upstreams.entries()) {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        response = await fetch(upstream.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${thaiLlmApiKey}`,
+          },
+          body: JSON.stringify({
+            model: upstream.model,
+            messages: modelMessages,
+            max_tokens: 2048,
+            temperature: 0.3,
+            stream: true,
+          }),
+          signal: upstreamSignal,
+        });
+        if (response.ok) break;
+        const retryable = [502, 503, 504].includes(response.status);
+        console.warn(`[AI chat] ${upstream.name} endpoint returned HTTP ${response.status} (attempt ${attempt + 1}).`);
+        await response.body?.cancel();
+        if (!retryable) break;
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      if (response?.ok) break;
+      if (upstreamIndex < upstreams.length - 1 && response && [502, 503, 504].includes(response.status)) {
+        console.warn('[AI chat] Trying the compatibility endpoint after a transient upstream failure.');
+        continue;
+      }
+      break;
+    }
+    if (!response?.ok) {
+      const status = response?.status ?? 502;
+      console.error(`[AI chat] All upstream attempts failed with HTTP ${status}.`);
+      await supabase.rpc('fail_ai_chat_job', { p_job_id: job.job_id, p_error: `AI ตอบกลับไม่สำเร็จ (HTTP ${status})` });
       return NextResponse.json({ error: 'AI ตอบกลับไม่สำเร็จ ลองใหม่ได้เมื่อคิวว่าง' }, { status: 502 });
     }
 

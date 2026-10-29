@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent }
 import { Clock3, Send, Sparkles } from 'lucide-react';
 import { MessageContent } from './MessageContent';
 import { PigeonLogo } from './PigeonLogo';
+import type { MemberProfile } from './ProfileDialog';
 import { stripThinkBlocks } from '@/lib/ai-chat';
 
 export type AiChatMessage = {
@@ -26,7 +27,7 @@ export type AiChatJob = {
   created_at: string;
 };
 
-export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, configured, error, userId, displayName, sending, onJoin, onSend }: {
+export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, configured, error, userId, displayName, memberProfiles, sending, onJoin, onSend }: {
   messages: AiChatMessage[];
   activeJob: AiChatJob | null;
   latestFailedJob: AiChatJob | null;
@@ -35,6 +36,7 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
   error: string;
   userId: string | null;
   displayName: string;
+  memberProfiles: Record<string, MemberProfile>;
   sending: boolean;
   onJoin: () => void;
   onSend: (prompt: string) => Promise<boolean>;
@@ -72,8 +74,9 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
         {!loading && !error && messages.map((message) => {
           const own = message.role === 'user' && message.sender_id === userId;
           const initial = Array.from(message.sender_name.trim())[0] || 'A';
+          const profile = message.role === 'user' && message.sender_id ? memberProfiles[message.sender_id] : null;
           return <article className={`group-message ai-chat-message ${own ? 'own-message' : ''} ${message.role === 'assistant' ? 'ai-chat-answer' : ''}`} key={message.id}>
-            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-hidden="true">{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : initial}</span>
+            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-label={message.role === 'assistant' ? 'AI' : message.sender_name} title={message.role === 'assistant' ? 'AI' : message.sender_name}>{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}</span>
             <div className="group-message-content">
               <div className="member-line"><strong className="ai-chat-sender">{message.role === 'assistant' ? 'AI' : message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
               <div className="group-message-items"><div className="chat-message-bubble-wrap"><MessageContent content={message.role === 'assistant' ? stripThinkBlocks(message.content) : message.content} /></div></div>
@@ -84,7 +87,7 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
           {activeJob.status === 'queued' ? <Clock3 size={14} /> : <span className="typing-dots" aria-hidden="true"><i /><i /><i /></span>}
           <span>{activeJob.status === 'queued' ? `กำลังเข้าคิว: ${activeJob.requester_name}` : `${activeJob.requester_name} กำลังคุยกับ AI · ทุกคนรอคิวถัดไป`}</span>
         </div>}
-        {!activeJob && latestFailedJob?.error_message && <div className="ai-chat-error" role="status">คำขอของ {latestFailedJob.requester_name}: {latestFailedJob.error_message.replace(/ThaiLLM/gi, 'AI')}</div>}
+        {!activeJob && latestFailedJob?.error_message && <div className="ai-chat-error" role="status">คำขอของ {latestFailedJob.requester_name}: {latestFailedJob.error_message.replace(/ThaiLLM/gi, 'AI').replace(/AI ตอบกลับไม่สำเร็จ \(HTTP 5\d\d\)/gi, 'ระบบกำลังตอบช้า ลองส่งใหม่อีกครั้ง')}</div>}
         {!loading && !error && messages.length === 0 && <p className="no-chat-messages">ยังไม่มีประวัติ ลองถาม AI ได้เลย ทุกคนในห้องจะเห็นคำตอบ</p>}
         <div ref={bottomRef} />
       </div>
