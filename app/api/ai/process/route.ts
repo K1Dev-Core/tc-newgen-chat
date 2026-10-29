@@ -233,7 +233,7 @@ export async function POST(request: Request) {
       if (!delta) return;
       answer += delta;
       pendingChunk += delta;
-      if (pendingChunk.length >= 96 || Date.now() - lastFlushAt >= 250) await flushChunk();
+      if (pendingChunk.length >= 48 || Date.now() - lastFlushAt >= 110) await flushChunk();
     };
 
     while (!streamFinished) {

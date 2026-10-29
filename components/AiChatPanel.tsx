@@ -46,6 +46,15 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
   const canJoin = Boolean(userId && displayName);
   const busy = Boolean(activeJob || sending);
   const ready = configured === true && !loading && !error;
+  const latestContent = messages.at(-1)?.content ?? '';
+
+  useLayoutEffect(() => {
+    const conversation = bottomRef.current?.closest('.conversation') as HTMLElement | null;
+    if (!conversation) return;
+    const nearBottom = conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight < 180;
+    if (!nearBottom) return;
+    conversation.scrollTop = conversation.scrollHeight;
+  }, [latestContent]);
 
   useLayoutEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -75,7 +84,8 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
           const own = message.role === 'user' && message.sender_id === userId;
           const initial = Array.from(message.sender_name.trim())[0] || 'A';
           const profile = message.role === 'user' && message.sender_id ? memberProfiles[message.sender_id] : null;
-          return <article className={`group-message ai-chat-message ${own ? 'own-message' : ''} ${message.role === 'assistant' ? 'ai-chat-answer' : ''}`} key={message.id}>
+          const streaming = message.role === 'assistant' && activeJob?.status === 'running' && message.job_id === activeJob.id;
+          return <article className={`group-message ai-chat-message ${own ? 'own-message' : ''} ${message.role === 'assistant' ? 'ai-chat-answer' : ''} ${streaming ? 'is-streaming' : ''}`} key={message.id}>
             <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-label={message.role === 'assistant' ? 'AI' : message.sender_name} title={message.role === 'assistant' ? 'AI' : message.sender_name}>{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}</span>
             <div className="group-message-content">
               <div className="member-line"><strong className="ai-chat-sender">{message.role === 'assistant' ? 'AI' : message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
