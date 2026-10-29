@@ -6,7 +6,14 @@ import type { ChatMessage, MessageReaction } from '@/lib/types';
 import { MessageContent } from './MessageContent';
 import type { MemberProfile } from './ProfileDialog';
 
-const REACTION_OPTIONS = ['👍', '❤️', '😂', '😮', '🙏'];
+const REACTION_OPTIONS = [
+  { id: 'pigeon-love', name: 'พิราบตาหวาน', image: '/reactions/pigeon-love.png' },
+  { id: 'pigeon-rude', name: 'พิราบนิ้วกลาง', image: '/reactions/pigeon-rude.png' },
+  { id: 'pigeon-laugh', name: 'พิราบขำ', image: '/reactions/pigeon-laugh.png' },
+  { id: 'pigeon-surprised', name: 'พิราบตกใจ', image: '/reactions/pigeon-surprised.png' },
+  { id: 'pigeon-crying', name: 'พิราบร้องไห้', image: '/reactions/pigeon-crying.png' },
+  { id: 'pigeon-wave', name: 'พิราบทักทาย', image: '/reactions/pigeon-wave.png' },
+];
 
 export function ChatPanel({ roomName, messages, typingNames, memberProfiles, reactions, viewerId, onOpenProfile, onJumpToMessage, onReply, onToggleReaction }: {
   roomName: string;
@@ -69,7 +76,7 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
     await onJumpToMessage(messageId);
   }
 
-  function renderReactions(message: ChatMessage) {
+  function renderReactionChips(message: ChatMessage) {
     const messageReactions = reactions.filter((reaction) => reaction.message_id === message.id);
     const counts = new Map<string, { count: number; mine: boolean }>();
     messageReactions.forEach(({ emoji, user_id }) => {
@@ -79,16 +86,25 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
       counts.set(emoji, current);
     });
 
+    if (!counts.size) return null;
+    return <div className="chat-reaction-list" aria-label="ปฏิกิริยาต่อข้อความ">
+      {[...counts].map(([emoji, value]) => {
+        const option = REACTION_OPTIONS.find((item) => item.id === emoji);
+        return <button type="button" key={emoji} className={`chat-reaction-chip ${value.mine ? 'selected' : ''}`} aria-label={`${option?.name ?? emoji} ${value.count}`} aria-pressed={value.mine} disabled={!viewerId} title={viewerId ? `กดเพื่อ${value.mine ? 'นำ' : 'เพิ่ม'} ${option?.name ?? emoji}` : 'เข้าร่วมแชทก่อนจึงกด Reaction ได้'} onClick={() => { void onToggleReaction(message.id, emoji); }}>
+          {option ? <img src={option.image} alt="" /> : <span className="chat-reaction-legacy">{emoji}</span>}<span>{value.count}</span>
+        </button>;
+      })}
+    </div>;
+  }
+
+  function renderMessageActions(message: ChatMessage) {
     return <>
-      {counts.size > 0 && <div className="chat-reaction-list" aria-label="ปฏิกิริยาต่อข้อความ">
-        {[...counts].map(([emoji, value]) => <button type="button" key={emoji} className={`chat-reaction-chip ${value.mine ? 'selected' : ''}`} aria-pressed={value.mine} disabled={!viewerId} title={viewerId ? `กดเพื่อ${value.mine ? 'นำ' : 'เพิ่ม'} ${emoji}` : 'เข้าร่วมแชทก่อนจึงกด Reaction ได้'} onClick={() => { void onToggleReaction(message.id, emoji); }}>{emoji}<span>{value.count}</span></button>)}
-      </div>}
       <div className="chat-message-actions">
         <button type="button" className="chat-message-action" aria-label={`ตอบกลับ ${message.sender}`} title="ตอบกลับ" onClick={() => onReply(message)}><MessageCircleReply size={14} /><span>ตอบกลับ</span></button>
         <div className="chat-reaction-picker-wrap">
           <button type="button" className="chat-message-action" aria-label="เพิ่ม Reaction" title="เพิ่ม Reaction" disabled={!viewerId} onClick={() => setReactionPickerFor((current) => current === message.id ? null : message.id)}><SmilePlus size={14} /><span>Reaction</span></button>
           {reactionPickerFor === message.id && <div className="chat-reaction-picker" aria-label="เลือก Reaction">
-            {REACTION_OPTIONS.map((emoji) => <button type="button" key={emoji} aria-label={`React ${emoji}`} title={emoji} onClick={() => { void onToggleReaction(message.id, emoji); setReactionPickerFor(null); }}>{emoji}</button>)}
+            {REACTION_OPTIONS.map((reaction) => <button type="button" key={reaction.id} aria-label={`React ${reaction.name}`} title={reaction.name} onClick={() => { void onToggleReaction(message.id, reaction.id); setReactionPickerFor(null); }}><img src={reaction.image} alt="" /></button>)}
           </div>}
         </div>
       </div>
@@ -108,8 +124,11 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
             <div className="member-line"><button type="button" className="member-name-button" onClick={openProfile}>{senderName}</button><time>{message.time}</time></div>
             <div className="group-message-items">{group.map((item) => <div id={`chat-message-${item.id}`} className={`chat-message-entry ${jumpingToId === item.id ? 'jump-highlight' : ''}`} key={item.id}>
               {item.replyToId && <button type="button" className="chat-reply-preview" title="ไปยังข้อความต้นฉบับ" onClick={() => { void jumpTo(item.replyToId!); }}><strong>{item.replyToSender ?? 'ข้อความที่ตอบกลับ'}</strong><span>{item.replyToText || 'ไฟล์แนบ'}</span></button>}
-              <MessageContent content={item.text} />
-              {renderReactions(item)}
+              <div className="chat-message-bubble-wrap">
+                <MessageContent content={item.text} />
+                {renderReactionChips(item)}
+              </div>
+              {renderMessageActions(item)}
             </div>)}</div>
           </div>
         </article>;
