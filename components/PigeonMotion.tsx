@@ -27,15 +27,13 @@ function getActivityClientId() {
 }
 
 function formatDistance(meters: number) {
-  if (meters < 1000) return `วิ่งมาแล้ว ${Math.floor(meters).toLocaleString('th-TH')} เมตร`;
-  const kilometers = (meters / 1000).toFixed(1).replace(/\.0$/, '');
-  return `วิ่งมาแล้ว ${kilometers} กิโลเมตร`;
+  if (meters < 1000) return `วิ่งมาแล้ว ${Math.floor(meters).toLocaleString('th-TH')} m`;
+  return `วิ่งมาแล้ว ${(meters / 1000).toFixed(3)} km`;
 }
 
 function formatCompactDistance(meters: number) {
-  if (meters < 1000) return `${Math.floor(meters).toLocaleString('th-TH')} ม.`;
-  const kilometers = (meters / 1000).toFixed(1).replace(/\.0$/, '');
-  return `${kilometers} กม.`;
+  if (meters < 1000) return `${Math.floor(meters).toLocaleString('th-TH')} m`;
+  return `${(meters / 1000).toFixed(3)} km`;
 }
 
 function getDaysSinceStart() {
@@ -61,6 +59,9 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   const syncingRef = useRef(false);
   const animatedMetersRef = useRef(0);
   const displayedMeters = totalMeters + pendingMeters;
+  const targetMetersRef = useRef(displayedMeters);
+  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleCountRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const updateDays = () => setDaysSinceStart(getDaysSinceStart());
@@ -69,24 +70,30 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   }, []);
 
   useEffect(() => {
-    const startValue = animatedMetersRef.current;
-    const difference = displayedMeters - startValue;
-    if (!difference) return;
-
-    let frame = 0;
-    const startedAt = performance.now();
-    const duration = 700;
-    const animate = (now: number) => {
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const eased = 1 - (1 - progress) ** 3;
-      const value = Math.round(startValue + difference * eased);
-      animatedMetersRef.current = value;
-      setAnimatedMeters(value);
-      if (progress < 1) frame = window.requestAnimationFrame(animate);
+    targetMetersRef.current = displayedMeters;
+    const schedule = () => {
+      if (countTimerRef.current || animatedMetersRef.current === targetMetersRef.current) return;
+      const gap = Math.abs(targetMetersRef.current - animatedMetersRef.current);
+      const delay = Math.max(12, Math.min(70, 1_200 / gap));
+      countTimerRef.current = setTimeout(() => {
+        countTimerRef.current = null;
+        const current = animatedMetersRef.current;
+        const target = targetMetersRef.current;
+        if (current !== target) {
+          const next = current + Math.sign(target - current);
+          animatedMetersRef.current = next;
+          setAnimatedMeters(next);
+        }
+        scheduleCountRef.current();
+      }, delay);
     };
-    frame = window.requestAnimationFrame(animate);
-    return () => window.cancelAnimationFrame(frame);
+    scheduleCountRef.current = schedule;
+    schedule();
   }, [displayedMeters]);
+
+  useEffect(() => () => {
+    if (countTimerRef.current) clearTimeout(countTimerRef.current);
+  }, []);
 
   const setPlayer = useCallback((player: DotLottie | null) => {
     playerRef.current = player;
