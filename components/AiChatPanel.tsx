@@ -1,8 +1,9 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { Bot, Clock3, Send, Sparkles } from 'lucide-react';
+import { Clock3, Send, Sparkles } from 'lucide-react';
 import { MessageContent } from './MessageContent';
+import { PigeonLogo } from './PigeonLogo';
 
 export type AiChatMessage = {
   id: string;
@@ -71,7 +72,7 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
           const own = message.role === 'user' && message.sender_id === userId;
           const initial = Array.from(message.sender_name.trim())[0] || 'A';
           return <article className={`group-message ai-chat-message ${own ? 'own-message' : ''} ${message.role === 'assistant' ? 'ai-chat-answer' : ''}`} key={message.id}>
-            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-hidden="true">{message.role === 'assistant' ? <Bot size={17} /> : initial}</span>
+            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-hidden="true">{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : initial}</span>
             <div className="group-message-content">
               <div className="member-line"><strong className="ai-chat-sender">{message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
               <div className="group-message-items"><div className="chat-message-bubble-wrap"><MessageContent content={message.content} /></div></div>

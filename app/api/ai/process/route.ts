@@ -6,12 +6,21 @@ export const maxDuration = 60;
 
 type ClaimedJob = { job_id: string; requester_name: string; prompt: string };
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
-type ThaiLlmResponse = { choices?: Array<{ message?: { content?: string | Array<{ type?: string; text?: string }> } }> };
+type ThaiLlmStreamChunk = {
+  choices?: Array<{ delta?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+  error?: { message?: string };
+};
 
 function readText(content: string | Array<{ type?: string; text?: string }> | undefined) {
   if (typeof content === 'string') return content.trim();
   if (!Array.isArray(content)) return '';
   return content.map((part) => part?.text ?? '').join('').trim();
+}
+
+function readDelta(content: string | Array<{ type?: string; text?: string }> | undefined) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((part) => part?.text ?? '').join('');
 }
 
 export async function POST(request: Request) {
@@ -77,6 +86,7 @@ export async function POST(request: Request) {
         messages: modelMessages,
         max_tokens: 2048,
         temperature: 0.3,
+        stream: true,
       }),
       signal: AbortSignal.timeout(50_000),
     });
@@ -85,8 +95,62 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'ThaiLLM ตอบกลับไม่สำเร็จ ลองใหม่ได้เมื่อคิวว่าง' }, { status: 502 });
     }
 
-    const result = await response.json() as ThaiLlmResponse;
-    const answer = readText(result.choices?.[0]?.message?.content);
+    if (!response.body) throw new Error('ThaiLLM ไม่ได้เปิดสตรีมคำตอบ');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let answer = '';
+    let pendingChunk = '';
+    let lastFlushAt = Date.now();
+    let streamFinished = false;
+
+    const flushChunk = async () => {
+      if (!pendingChunk) return;
+      const chunk = pendingChunk;
+      pendingChunk = '';
+      const { data, error } = await supabase.rpc('append_ai_chat_job_chunk', {
+        p_job_id: job.job_id,
+        p_content: chunk,
+      });
+      if (error || data === false) throw new Error('อัปเดตข้อความสตรีมไม่สำเร็จ');
+      lastFlushAt = Date.now();
+    };
+
+    const consumeLine = async (line: string) => {
+      if (!line.startsWith('data:')) return;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') {
+        if (payload === '[DONE]') streamFinished = true;
+        return;
+      }
+      let event: ThaiLlmStreamChunk;
+      try {
+        event = JSON.parse(payload) as ThaiLlmStreamChunk;
+      } catch {
+        return;
+      }
+      if (event.error?.message) throw new Error('ThaiLLM ส่งข้อผิดพลาดระหว่างสตรีม');
+      const delta = readDelta(event.choices?.[0]?.delta?.content);
+      if (!delta) return;
+      answer += delta;
+      pendingChunk += delta;
+      if (pendingChunk.length >= 96 || Date.now() - lastFlushAt >= 250) await flushChunk();
+    };
+
+    while (!streamFinished) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      for (const line of lines) await consumeLine(line);
+      if (done) {
+        if (buffer) await consumeLine(buffer);
+        break;
+      }
+    }
+    await flushChunk();
+    answer = readText(answer);
     if (!answer) throw new Error('ThaiLLM ส่งคำตอบว่างกลับมา');
 
     const { data: completed, error: completeError } = await supabase.rpc('finish_ai_chat_job', {
