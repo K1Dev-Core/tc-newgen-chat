@@ -3,7 +3,8 @@
 import { DragEvent, KeyboardEvent, ClipboardEvent, useMemo, useRef, useState } from 'react';
 import { File as FileIcon, LoaderCircle, Paperclip, Search, Send, Volume2, X } from 'lucide-react';
 import hljs from 'highlight.js';
-import { formatFileSize, type ChatFileAttachment } from '@/lib/chat-files';
+import { formatFileSize, parseChatContent, type ChatFileAttachment } from '@/lib/chat-files';
+import type { ChatMessage } from '@/lib/types';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
 function detectCodeLanguage(text: string): string | null {
@@ -36,12 +37,19 @@ function formatDetectedCode(text: string): string {
   return language === null ? text : `\`\`\`${language}\n${text}\n\`\`\``;
 }
 
-export function Composer({ canSend, sending, sfxCooldownRemaining, onOpenJoin, onSend, onUploadFile, onNotify, onTyping, onPlaySfx }: {
+function messagePreview(content: string): string {
+  const parsed = parseChatContent(content);
+  return parsed.text || parsed.files.map((file) => file.filename).join(', ') || 'ไฟล์แนบ';
+}
+
+export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, onCancelReply, onOpenJoin, onSend, onUploadFile, onNotify, onTyping, onPlaySfx }: {
   canSend: boolean;
   sending: boolean;
   sfxCooldownRemaining: number;
+  replyTarget: ChatMessage | null;
+  onCancelReply: () => void;
   onOpenJoin: () => void;
-  onSend: (text: string, files: ChatFileAttachment[]) => Promise<boolean>;
+  onSend: (text: string, files: ChatFileAttachment[], replyToId?: string) => Promise<boolean>;
   onUploadFile: (file: File, onProgress: (percentage: number) => void) => Promise<ChatFileAttachment>;
   onNotify: (message: string) => void;
   onTyping: (isTyping: boolean) => void;
@@ -84,9 +92,10 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, onOpenJoin, o
         uploadedFiles.push(await onUploadFile(file, (percentage) => setUploadProgress({ filename: file.name, percentage })));
       }
       setUploadProgress(null);
-      if (await onSend(formattedMessage, uploadedFiles)) {
+      if (await onSend(formattedMessage, uploadedFiles, replyTarget?.id)) {
         setValue('');
         setFiles([]);
+        onCancelReply();
         if (fileRef.current) fileRef.current.value = '';
       }
     } catch (error) {
@@ -132,6 +141,7 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, onOpenJoin, o
         </div>)}
       </div>}
       {uploadProgress && <div className="composer-upload-progress" role="status"><span>กำลังอัปโหลด {uploadProgress.filename} · {uploadProgress.percentage}%</span><progress max="100" value={uploadProgress.percentage} /></div>}
+      {replyTarget && <div className="composer-reply-context"><div><small>กำลังตอบกลับ {replyTarget.sender}</small><span>{messagePreview(replyTarget.text)}</span></div><button type="button" aria-label="ยกเลิกการตอบกลับ" title="ยกเลิกการตอบกลับ" onClick={onCancelReply}><X size={15} /></button></div>}
       <div className="composer-main">
         <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend || busy} value={value} onPaste={onPaste} onChange={(event) => {
           const nextValue = event.target.value;

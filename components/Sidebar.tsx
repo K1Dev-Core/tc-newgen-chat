@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
 import type { ChatRoom, ChatServer } from '@/lib/types';
 import { PigeonLogo } from './PigeonLogo';
+import { PigeonMotion } from './PigeonMotion';
 
 export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
   const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
@@ -30,5 +31,7 @@ export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, o
         </div>;
       })}
     </nav>
+    <div className="sidebar-mascot-spacer" aria-hidden="true" />
+    <PigeonMotion />
   </aside>;
 }

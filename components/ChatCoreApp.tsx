@@ -14,8 +14,8 @@ import { ProfileDialog } from './ProfileDialog';
 import { JoinChatDialog } from './JoinChatDialog';
 import type { MemberProfile } from './ProfileDialog';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
-import type { ChatMessage, ChatRoom, ChatServer } from '@/lib/types';
-import { serializeChatContent, type ChatFileAttachment } from '@/lib/chat-files';
+import type { ChatMessage, ChatRoom, ChatServer, MessageReaction } from '@/lib/types';
+import { parseChatContent, serializeChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 import { uploadChatFile } from '@/lib/file-upload-client';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
 
@@ -69,7 +69,28 @@ type MessageRow = {
   sender_name: string;
   content: string;
   created_at: string;
+  reply_to_id?: string | null;
 };
+
+type ReplyTargetRow = { id: string; sender_name: string; content: string };
+
+async function hydrateMessageReplies(supabase: SupabaseClient, rows: MessageRow[], currentUserId?: string): Promise<ChatMessage[]> {
+  const messages = rows.map((row) => toChatMessage(row, currentUserId));
+  const replyIds = [...new Set(messages.map((message) => message.replyToId).filter((id): id is string => Boolean(id)))];
+  if (!replyIds.length) return messages;
+
+  const { data } = await supabase.from('messages').select('id,sender_name,content').in('id', replyIds);
+  const replies = new Map<string, ReplyTargetRow>();
+  (data as ReplyTargetRow[] | null)?.forEach((row) => replies.set(row.id, row));
+  return messages.map((message) => {
+    if (!message.replyToId) return message;
+    const reply = replies.get(message.replyToId);
+    if (!reply) return message;
+    const parsed = parseChatContent(reply.content);
+    const preview = parsed.text.trim() || (parsed.files.length ? `ไฟล์แนบ: ${parsed.files.map((file) => file.filename).join(', ')}` : '');
+    return { ...message, replyToSender: reply.sender_name, replyToText: preview.slice(0, 180) };
+  });
+}
 
 type TypingPayload = {
   client_id: string;
@@ -100,6 +121,7 @@ function toChatMessage(row: MessageRow, currentUserId?: string): ChatMessage {
     text: row.content,
     time: new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(row.created_at)),
     createdAt: row.created_at,
+    replyToId: row.reply_to_id ?? null,
   };
 }
 
@@ -127,6 +149,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [activeRoomSlug, setActiveRoomSlug] = useState(DEFAULT_ROOM_SLUG);
   const [activeBoardServerId, setActiveBoardServerId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [reactionRows, setReactionRows] = useState<MessageReaction[]>([]);
+  const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [typingNames, setTypingNames] = useState<string[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
   const [user, setUser] = useState<User | null>(null);
@@ -160,6 +184,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const sfxAudioRef = useRef<HTMLAudioElement | null>(null);
   const seenSfxEventsRef = useRef(new Set<string>());
   const sfxCooldownUntilRef = useRef(0);
+  const pendingReactionsRef = useRef(new Set<string>());
 
   useEffect(() => {
     let sharedClientId = '';
@@ -308,6 +333,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     setLoading(true);
     setRoomError('');
     setMessages([]);
+    setReactionRows([]);
+    setReplyTarget(null);
     setTypingNames([]);
     setActiveRoomSlug(slug);
     setMobileSidebarOpen(false);
@@ -317,6 +344,23 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     setActiveBoardServerId(serverId);
     setMobileSidebarOpen(false);
   }
+
+  const messageIdsKey = messages.map((message) => message.id).join(',');
+  useEffect(() => {
+    if (!roomId || !messageIdsKey) { setReactionRows([]); return; }
+    let alive = true;
+    const ids = messageIdsKey.split(',');
+    void supabase.from('message_reactions').select('message_id,user_id,emoji').eq('room_id', roomId).in('message_id', ids).then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { notify('โหลด Reaction ไม่สำเร็จ ตรวจ migration ของ Reaction ใน Supabase'); return; }
+      setReactionRows((current) => {
+        const merged = new Map(current.map((reaction) => [`${reaction.message_id}:${reaction.user_id}:${reaction.emoji}`, reaction]));
+        (data as MessageReaction[] | null)?.forEach((reaction) => merged.set(`${reaction.message_id}:${reaction.user_id}:${reaction.emoji}`, reaction));
+        return [...merged.values()].filter((reaction) => ids.includes(reaction.message_id));
+      });
+    });
+    return () => { alive = false; };
+  }, [supabase, roomId, messageIdsKey]);
 
   useEffect(() => {
     if (!roomId || activeBoardServerId) { setOnlineCount(0); return; }
@@ -361,10 +405,24 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
       (payload) => {
-        const message = toChatMessage(payload.new as MessageRow, user?.id);
-        setMessages((current) => current.some((item) => item.id === message.id)
-          ? current
-          : [...current, message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+        void hydrateMessageReplies(supabase, [payload.new as MessageRow], user?.id).then(([message]) => {
+          setMessages((current) => current.some((item) => item.id === message.id)
+            ? current
+            : [...current, message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+        });
+      },
+    ).on('postgres_changes',
+      { event: '*', schema: 'public', table: 'message_reactions', filter: `room_id=eq.${roomId}` },
+      (payload) => {
+        const row = (payload.eventType === 'DELETE' ? payload.old : payload.new) as MessageReaction & { room_id?: string };
+        if (!row?.message_id || !row.user_id || !row.emoji) return;
+        const key = `${row.message_id}:${row.user_id}:${row.emoji}`;
+        setReactionRows((current) => {
+          const next = new Map(current.map((reaction) => [`${reaction.message_id}:${reaction.user_id}:${reaction.emoji}`, reaction]));
+          if (payload.eventType === 'DELETE') next.delete(key);
+          else next.set(key, row);
+          return [...next.values()];
+        });
       },
     ).subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -376,15 +434,16 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     typingChannelRef.current = channel;
 
     void supabase.from('messages')
-      .select('id,sender_id,sender_name,content,created_at')
+      .select('id,sender_id,sender_name,content,created_at,reply_to_id')
       .eq('room_id', roomId)
       .order('created_at', { ascending: true })
       .limit(100)
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (!alive) return;
         if (error) notify('โหลดประวัติแชตไม่สำเร็จ');
         if (data) {
-          const fetched = (data as MessageRow[]).map((row) => toChatMessage(row, user?.id));
+          const fetched = await hydrateMessageReplies(supabase, data as MessageRow[], user?.id);
+          if (!alive) return;
           setMessages((current) => {
             const merged = new Map(fetched.map((item) => [item.id, item]));
             current.forEach((item) => merged.set(item.id, item));
@@ -553,7 +612,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     return uploadChatFile(file, data.session.access_token, onProgress);
   }
 
-  async function sendMessage(text: string, files: ChatFileAttachment[] = []): Promise<boolean> {
+  async function sendMessage(text: string, files: ChatFileAttachment[] = [], replyToId?: string): Promise<boolean> {
     if (!user || !displayName || !roomId) return false;
     const content = serializeChatContent(text, files);
     if (new TextEncoder().encode(content).byteLength > 180000) {
@@ -567,14 +626,15 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         sender_id: user.id,
         sender_name: displayName,
         content,
-      }).select('id,sender_id,sender_name,content,created_at').single();
+        reply_to_id: replyToId ?? null,
+      }).select('id,sender_id,sender_name,content,created_at,reply_to_id').single();
 
       if (error || !data) {
         console.error('[Chat] Message insert failed.', { roomId, userId: user.id, error });
         notify(error?.message ? `ส่งข้อความไม่สำเร็จ: ${error.message}` : 'ส่งข้อความไม่สำเร็จ ลองอีกครั้ง');
         return false;
       }
-      const message = toChatMessage(data as MessageRow, user.id);
+      const [message] = await hydrateMessageReplies(supabase, [data as MessageRow], user.id);
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
       return true;
     } catch (error) {
@@ -586,14 +646,63 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     }
   }
 
+  async function searchMessages(query: string): Promise<ChatMessage[]> {
+    if (!roomId) return [];
+    const pattern = query.replace(/[\\%_]/g, '\\$&');
+    const columns = 'id,sender_id,sender_name,content,created_at,reply_to_id';
+    const [contentResult, senderResult] = await Promise.all([
+      supabase.from('messages').select(columns).eq('room_id', roomId).ilike('content', `%${pattern}%`).order('created_at', { ascending: false }).limit(100),
+      supabase.from('messages').select(columns).eq('room_id', roomId).ilike('sender_name', `%${pattern}%`).order('created_at', { ascending: false }).limit(100),
+    ]);
+    if (contentResult.error || senderResult.error) throw contentResult.error ?? senderResult.error;
+    const unique = new Map<string, MessageRow>();
+    (contentResult.data as MessageRow[] | null)?.forEach((row) => unique.set(row.id, row));
+    (senderResult.data as MessageRow[] | null)?.forEach((row) => unique.set(row.id, row));
+    const rows = [...unique.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
+    return hydrateMessageReplies(supabase, rows, user?.id);
+  }
+
+  async function jumpToMessage(messageId: string): Promise<void> {
+    if (messages.some((message) => message.id === messageId)) return;
+    const { data, error } = await supabase.from('messages').select('id,sender_id,sender_name,content,created_at,reply_to_id').eq('room_id', roomId).eq('id', messageId).maybeSingle();
+    if (error || !data) { notify('เปิดข้อความต้นฉบับไม่สำเร็จ'); return; }
+    const [message] = await hydrateMessageReplies(supabase, [data as MessageRow], user?.id);
+    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+  }
+
+  async function toggleReaction(messageId: string, emoji: string): Promise<void> {
+    if (!user || !displayName || !roomId) { notify('เข้าร่วมแชทก่อนจึงจะกด Reaction ได้'); return; }
+    const key = `${messageId}:${user.id}:${emoji}`;
+    if (pendingReactionsRef.current.has(key)) return;
+    pendingReactionsRef.current.add(key);
+    const existing = reactionRows.some((reaction) => reaction.message_id === messageId && reaction.user_id === user.id && reaction.emoji === emoji);
+    setReactionRows((current) => existing
+      ? current.filter((reaction) => !(reaction.message_id === messageId && reaction.user_id === user.id && reaction.emoji === emoji))
+      : [...current, { message_id: messageId, user_id: user.id, emoji }]);
+    try {
+      const result = existing
+        ? await supabase.from('message_reactions').delete().eq('room_id', roomId).eq('message_id', messageId).eq('user_id', user.id).eq('emoji', emoji)
+        : await supabase.from('message_reactions').insert({ room_id: roomId, message_id: messageId, user_id: user.id, emoji });
+      if (result.error) throw result.error;
+    } catch (error) {
+      setReactionRows((current) => existing
+        ? [...current, { message_id: messageId, user_id: user.id, emoji }]
+        : current.filter((reaction) => !(reaction.message_id === messageId && reaction.user_id === user.id && reaction.emoji === emoji)));
+      console.error('[Chat] Reaction update failed.', { roomId, messageId, error });
+      notify('บันทึก Reaction ไม่สำเร็จ ตรวจ migration และสิทธิ์ใน Supabase');
+    } finally {
+      pendingReactionsRef.current.delete(key);
+    }
+  }
+
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
     <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} onSelectRoom={selectRoom} onSelectBoard={selectBoard} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
       <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={roomId} viewerId={user?.id ?? null} onlineCount={onlineCount} supabase={supabase} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
       {activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} userName={displayName || 'ผู้เยี่ยมชม'} avatarUrl={user ? memberProfiles[user.id]?.avatar_url ?? null : null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
-        : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} />}
-      {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
+        : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} reactions={reactionRows} viewerId={user?.id ?? null} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} onSearchMessages={searchMessages} onJumpToMessage={jumpToMessage} onReply={setReplyTarget} onToggleReaction={toggleReaction} />}
+      {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} replyTarget={replyTarget} onCancelReply={() => setReplyTarget(null)} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
     </main>
     {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
       <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>

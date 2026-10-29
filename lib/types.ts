@@ -10,4 +10,13 @@ export type ChatMessage = {
   time: string;
   createdAt: string;
   id: string;
+  replyToId?: string | null;
+  replyToSender?: string | null;
+  replyToText?: string | null;
+};
+
+export type MessageReaction = {
+  message_id: string;
+  user_id: string;
+  emoji: string;
 };
