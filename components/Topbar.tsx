@@ -8,7 +8,7 @@ import { parseChatContent } from '@/lib/chat-files';
 import type { MemberProfile } from './ProfileDialog';
 import { DailyFlame } from './DailyFlame';
 
-export function Topbar({ serverName, roomName, roomId, viewerId, onlineCount, supabase, isBoard = false, onToggleSidebar, profile, memberProfiles, onOpenProfile, onSearchMessages, onJumpToMessage }: {
+export function Topbar({ serverName, roomName, roomId, viewerId, onlineCount, supabase, isBoard = false, isAiChat = false, onToggleSidebar, profile, memberProfiles, onOpenProfile, onSearchMessages, onJumpToMessage }: {
   serverName: string;
   roomName: string;
   roomId: string;
@@ -16,6 +16,7 @@ export function Topbar({ serverName, roomName, roomId, viewerId, onlineCount, su
   onlineCount: number;
   supabase: SupabaseClient;
   isBoard?: boolean;
+  isAiChat?: boolean;
   onToggleSidebar: () => void;
   profile: MemberProfile | null;
   memberProfiles: Record<string, MemberProfile>;
@@ -57,10 +58,10 @@ export function Topbar({ serverName, roomName, roomId, viewerId, onlineCount, su
     <div className="topbar-main-row">
       <button className="mobile-menu-button" aria-label="Open server sidebar" onClick={onToggleSidebar}><Menu size={17} /></button>
       <div className="breadcrumbs"><span>{serverName}</span><b>/</b><span>{isBoard ? `▧ ${roomName}` : `# ${roomName}`}</span></div>
-      {!isBoard && <button type="button" className="topbar-search-trigger" aria-label="ค้นหาข้อความในห้อง" title="ค้นหาข้อความในห้อง" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); setSearchError(''); }}><Search size={16} /><span>ค้นหา</span></button>}
-      <div className="topbar-right-controls">{!isBoard && <><DailyFlame roomId={roomId} viewerId={viewerId} supabase={supabase} /><span className="chat-online-count" title="จำนวนคนที่ออนไลน์ในห้องแชท" aria-label={`${onlineCount} คนออนไลน์`}><Users size={14} /><strong>{onlineCount}</strong><span>ออนไลน์</span></span></>}{profile && <button type="button" className="topbar-profile-button" onClick={onOpenProfile} aria-label="ตั้งค่าโปรไฟล์" title="ตั้งค่าโปรไฟล์">{profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <UserRoundCog size={16} />}<span>{profile.display_name}</span></button>}</div>
+      {!isBoard && !isAiChat && <button type="button" className="topbar-search-trigger" aria-label="ค้นหาข้อความในห้อง" title="ค้นหาข้อความในห้อง" aria-expanded={searchOpen} onClick={() => { setSearchOpen((open) => !open); setSearchError(''); }}><Search size={16} /><span>ค้นหา</span></button>}
+      <div className="topbar-right-controls">{!isBoard && !isAiChat && <><DailyFlame roomId={roomId} viewerId={viewerId} supabase={supabase} /><span className="chat-online-count" title="จำนวนคนที่ออนไลน์ในห้องแชท" aria-label={`${onlineCount} คนออนไลน์`}><Users size={14} /><strong>{onlineCount}</strong><span>ออนไลน์</span></span></>}{profile && <button type="button" className="topbar-profile-button" onClick={onOpenProfile} aria-label="ตั้งค่าโปรไฟล์" title="ตั้งค่าโปรไฟล์">{profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <UserRoundCog size={16} />}<span>{profile.display_name}</span></button>}</div>
     </div>
-    {searchOpen && <div className="topbar-search-panel">
+    {searchOpen && !isBoard && !isAiChat && <div className="topbar-search-panel">
       <form className="topbar-search-form" onSubmit={runSearch}>
         <Search size={16} aria-hidden="true" />
         <input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setSearchOpen(false); }} placeholder="ค้นหาข้อความหรือชื่อคนส่ง" aria-label="ค้นหาข้อความหรือชื่อคนส่ง" />
