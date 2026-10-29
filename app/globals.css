@@ -145,3 +145,4 @@ body{background:#f0eff6;color:#343452}
 .composer-wrap{z-index:40}
 @media(max-width:650px){.chat-reaction-list{top:-34px;right:0;left:auto;bottom:auto;width:max-content;max-width:min(260px,calc(100vw - 88px));gap:1px}.own-message .chat-reaction-list{right:auto;left:0}.chat-reaction-chip,.chat-reaction-chip.selected{width:30px;height:30px;min-width:30px}.chat-reaction-chip img{width:28px;height:28px}.chat-reaction-legacy{font-size:14px}}
 @media(max-width:650px){.composer-wrap{z-index:4}}
+.mascot-activity-gain{position:absolute;top:2px;left:50%;z-index:3;color:#7775b4;font:700 10px/1 'DM Sans',sans-serif;text-shadow:0 1px 5px #fbfaff;white-space:nowrap;pointer-events:none;animation:mascot-activity-gain .85s ease-out both}@keyframes mascot-activity-gain{0%{opacity:0;transform:translate(-50%,5px) scale(.92)}22%{opacity:.82;transform:translate(-50%,0) scale(1)}75%{opacity:.72}100%{opacity:0;transform:translate(-50%,-9px) scale(1.02)}}

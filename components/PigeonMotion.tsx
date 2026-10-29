@@ -48,6 +48,7 @@ function getDaysSinceStart() {
 
 export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   const [daysSinceStart, setDaysSinceStart] = useState(getDaysSinceStart);
+  const [activityGain, setActivityGain] = useState<{ id: number; amount: number } | null>(null);
   const [totalMeters, setTotalMeters] = useState(0);
   const [pendingMeters, setPendingMeters] = useState(0);
   const [animatedMeters, setAnimatedMeters] = useState(0);
@@ -65,6 +66,9 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   const targetMetersRef = useRef(displayedMeters);
   const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduleCountRef = useRef<() => void>(() => {});
+  const activityGainAmountRef = useRef(0);
+  const activityGainIdRef = useRef(0);
+  const activityGainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const updateDays = () => setDaysSinceStart(getDaysSinceStart());
@@ -181,6 +185,14 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
       const activityMeters = Number((event as CustomEvent<{ meters?: number }> | undefined)?.detail?.meters);
       if (Number.isFinite(activityMeters) && activityMeters > 0) {
         setPendingMeters((current) => current + activityMeters);
+        activityGainAmountRef.current += activityMeters;
+        setActivityGain({ id: ++activityGainIdRef.current, amount: activityGainAmountRef.current });
+        if (activityGainTimerRef.current) clearTimeout(activityGainTimerRef.current);
+        activityGainTimerRef.current = setTimeout(() => {
+          activityGainAmountRef.current = 0;
+          activityGainTimerRef.current = null;
+          setActivityGain(null);
+        }, 850);
       }
       const player = playerRef.current;
       if (player?.isLoaded) {
@@ -232,6 +244,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
       window.removeEventListener('click', handleClick);
       window.removeEventListener(MASCOT_ACTIVITY_EVENT, wakeMascot);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (activityGainTimerRef.current) clearTimeout(activityGainTimerRef.current);
       playerRef.current?.stop();
       void supabase.removeChannel(channel);
     };
@@ -239,6 +252,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
 
   return (
     <div className="sidebar-mascot">
+      {activityGain && <span key={activityGain.id} className="mascot-activity-gain" aria-hidden="true">+{activityGain.amount}</span>}
       <div className="sidebar-mascot-animation">
         <DotLottieReact
           src="/running-pigeon.lottie"
