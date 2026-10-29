@@ -344,7 +344,9 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         return;
       }
       const nextServers = (serverResult.data ?? []) as ChatServer[];
-      const nextRooms = (roomResult.data ?? []) as ChatRoom[];
+      const nextRooms = ((roomResult.data ?? []) as ChatRoom[]).filter((room) =>
+        room.slug !== 'ai-chat' && room.name !== 'คุยกับ AI',
+      );
       setServers(nextServers);
       setRooms(nextRooms);
       if (!nextRooms.length) {
