@@ -27,7 +27,7 @@ export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, a
           </button>
           {expanded && <>
             {serverRooms.map((room) => <button className={`nav-item project-child ${!activeAiChat && !activeBoardServerId && activeRoomSlug === room.slug ? 'active' : ''}`} key={room.id} onClick={() => onSelectRoom(room.slug)} aria-label={`${room.name} channel`} data-tooltip={room.name}><Hash size={15} /><span>{room.name}</span></button>)}
-            {server.name === 'TC' && <button className={`nav-item project-child ai-chat-link ${activeAiChat ? 'active' : ''}`} onClick={onSelectAiChat} aria-label="คุยกับ ThaiLLM" data-tooltip="คุยกับ AI"><Bot size={15} /><span>คุยกับ AI</span></button>}
+            {server.name === 'TC' && <button className={`nav-item project-child ai-chat-link ${activeAiChat ? 'active' : ''}`} onClick={onSelectAiChat} aria-label="คุยกับ AI" data-tooltip="คุยกับ AI"><Bot size={15} /><span>คุยกับ AI</span></button>}
             <button className={`nav-item project-child server-board-link ${activeBoardServerId === server.id ? 'active' : ''}`} onClick={() => onSelectBoard(server.id)} aria-label={`${server.name} shared board`} data-tooltip="บอร์ด"><PencilRuler size={15} /><span>บอร์ด</span></button>
           </>}
         </div>;

@@ -152,11 +152,11 @@ export async function POST(request: Request) {
       signal: AbortSignal.timeout(50_000),
     });
     if (!response.ok) {
-      await supabase.rpc('fail_ai_chat_job', { p_job_id: job.job_id, p_error: `ThaiLLM ตอบกลับไม่สำเร็จ (HTTP ${response.status})` });
-      return NextResponse.json({ error: 'ThaiLLM ตอบกลับไม่สำเร็จ ลองใหม่ได้เมื่อคิวว่าง' }, { status: 502 });
+      await supabase.rpc('fail_ai_chat_job', { p_job_id: job.job_id, p_error: `AI ตอบกลับไม่สำเร็จ (HTTP ${response.status})` });
+      return NextResponse.json({ error: 'AI ตอบกลับไม่สำเร็จ ลองใหม่ได้เมื่อคิวว่าง' }, { status: 502 });
     }
 
-    if (!response.body) throw new Error('ThaiLLM ไม่ได้เปิดสตรีมคำตอบ');
+    if (!response.body) throw new Error('AI ไม่ได้เปิดสตรีมคำตอบ');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -192,7 +192,7 @@ export async function POST(request: Request) {
       } catch {
         return;
       }
-      if (event.error?.message) throw new Error('ThaiLLM ส่งข้อผิดพลาดระหว่างสตรีม');
+      if (event.error?.message) throw new Error('AI ส่งข้อผิดพลาดระหว่างสตรีม');
       const delta = thinkFilter.push(readDelta(event.choices?.[0]?.delta?.content));
       if (!delta) return;
       answer += delta;
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
     }
     await flushChunk();
     answer = stripThinkBlocks(readText(answer));
-    if (!answer) throw new Error('ThaiLLM ส่งคำตอบว่างกลับมา');
+    if (!answer) throw new Error('AI ส่งคำตอบว่างกลับมา');
 
     const { data: completed, error: completeError } = await supabase.rpc('finish_ai_chat_job', {
       p_job_id: job.job_id,
@@ -228,7 +228,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ accepted: true, completed: true });
   } catch (error) {
     const safeMessage = error instanceof Error && error.name === 'TimeoutError'
-      ? 'ThaiLLM ใช้เวลาตอบนานเกินไป ลองส่งคำถามใหม่เมื่อคิวว่าง'
+      ? 'AI ใช้เวลาตอบนานเกินไป ลองส่งคำถามใหม่เมื่อคิวว่าง'
       : 'ประมวลผลคำถามไม่สำเร็จ ลองใหม่เมื่อคิวว่าง';
     await supabase.rpc('fail_ai_chat_job', { p_job_id: job.job_id, p_error: safeMessage });
     console.error('[AI chat] Request failed.', error instanceof Error ? error.message : 'Unknown error');
