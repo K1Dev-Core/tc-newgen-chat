@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { stripThinkBlocks } from '@/lib/ai-chat';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,6 +22,66 @@ function readDelta(content: string | Array<{ type?: string; text?: string }> | u
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
   return content.map((part) => part?.text ?? '').join('');
+}
+
+function createThinkFilter() {
+  const openTag = '<think>';
+  const closeTag = '</think>';
+  let pending = '';
+  let hidden = false;
+
+  function suffixPrefixLength(value: string, tag: string) {
+    const lower = value.toLowerCase();
+    const normalizedTag = tag.toLowerCase();
+    for (let length = Math.min(lower.length, normalizedTag.length - 1); length > 0; length -= 1) {
+      if (lower.endsWith(normalizedTag.slice(0, length))) return length;
+    }
+    return 0;
+  }
+
+  return {
+    push(chunk: string) {
+      pending += chunk;
+      let visible = '';
+
+      while (pending) {
+        const lower = pending.toLowerCase();
+        if (hidden) {
+          const closeIndex = lower.indexOf(closeTag);
+          if (closeIndex >= 0) {
+            pending = pending.slice(closeIndex + closeTag.length);
+            hidden = false;
+            continue;
+          }
+          const keep = suffixPrefixLength(pending, closeTag);
+          pending = keep ? pending.slice(-keep) : '';
+          break;
+        }
+
+        const openIndex = lower.indexOf(openTag);
+        if (openIndex >= 0) {
+          visible += pending.slice(0, openIndex);
+          pending = pending.slice(openIndex + openTag.length);
+          hidden = true;
+          continue;
+        }
+
+        const keep = suffixPrefixLength(pending, openTag);
+        visible += keep ? pending.slice(0, -keep) : pending;
+        pending = keep ? pending.slice(-keep) : '';
+        break;
+      }
+
+      return visible.replace(/<\/think\s*>/gi, '');
+    },
+    finish() {
+      const lowerPending = pending.toLowerCase();
+      const partialOpenTag = openTag.startsWith(lowerPending);
+      const tail = !hidden && !partialOpenTag ? pending : '';
+      pending = '';
+      return tail.replace(/<\/think\s*>/gi, '');
+    },
+  };
 }
 
 export async function POST(request: Request) {
@@ -72,7 +133,7 @@ export async function POST(request: Request) {
       .slice(-40);
     const modelMessages = [
       { role: 'system', content: 'คุณคือผู้ช่วย AI ในห้องแชทกลุ่มของเพื่อน ตอบเป็นภาษาเดียวกับผู้ถาม กระชับ ชัดเจน และรักษาบริบทจากข้อความก่อนหน้า หากมีหลายคนใช้ห้องนี้ ให้ตอบเฉพาะคำถามล่าสุดโดยอิงประวัติที่เกี่ยวข้อง' },
-      ...history.map(({ role, content }) => ({ role, content })),
+      ...history.map(({ role, content }) => ({ role, content: role === 'assistant' ? stripThinkBlocks(content) : content })),
     ];
 
     const response = await fetch('https://thaillm.or.th/api/v1/chat/completions', {
@@ -104,6 +165,7 @@ export async function POST(request: Request) {
     let pendingChunk = '';
     let lastFlushAt = Date.now();
     let streamFinished = false;
+    const thinkFilter = createThinkFilter();
 
     const flushChunk = async () => {
       if (!pendingChunk) return;
@@ -131,7 +193,7 @@ export async function POST(request: Request) {
         return;
       }
       if (event.error?.message) throw new Error('ThaiLLM ส่งข้อผิดพลาดระหว่างสตรีม');
-      const delta = readDelta(event.choices?.[0]?.delta?.content);
+      const delta = thinkFilter.push(readDelta(event.choices?.[0]?.delta?.content));
       if (!delta) return;
       answer += delta;
       pendingChunk += delta;
@@ -149,8 +211,13 @@ export async function POST(request: Request) {
         break;
       }
     }
+    const finalVisibleTail = thinkFilter.finish();
+    if (finalVisibleTail) {
+      answer += finalVisibleTail;
+      pendingChunk += finalVisibleTail;
+    }
     await flushChunk();
-    answer = readText(answer);
+    answer = stripThinkBlocks(readText(answer));
     if (!answer) throw new Error('ThaiLLM ส่งคำตอบว่างกลับมา');
 
     const { data: completed, error: completeError } = await supabase.rpc('finish_ai_chat_job', {

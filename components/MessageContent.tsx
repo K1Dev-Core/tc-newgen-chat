@@ -10,33 +10,87 @@ type MessagePart =
   | { type: 'text'; value: string }
   | { type: 'code'; language: string; value: string };
 
-function renderLinkedText(text: string) {
-  const urlPattern = /https?:\/\/[^\s<>]+/gi;
+function renderInline(text: string, prefix: string): ReactNode[] {
+  const inlinePattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_|https?:\/\/[^\s<>]+)/gi;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   let key = 0;
 
-  while ((match = urlPattern.exec(text)) !== null) {
-    const rawUrl = match[0];
-    const url = rawUrl.replace(/[.,!?;:)\]}]+$/u, '');
-    if (!url) continue;
-    let safeUrl: string | null = null;
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') safeUrl = parsed.href;
-    } catch { /* Leave malformed URLs as plain text. */ }
-    if (!safeUrl) continue;
-
+  while ((match = inlinePattern.exec(text)) !== null) {
     if (match.index > cursor) nodes.push(text.slice(cursor, match.index));
-    nodes.push(<a className="message-link" href={safeUrl} target="_blank" rel="noopener noreferrer" key={`url-${key++}`}>{url}</a>);
-    if (url.length < rawUrl.length) nodes.push(rawUrl.slice(url.length));
-    cursor = match.index + rawUrl.length;
+    const token = match[0];
+    const tokenKey = `${prefix}-${key++}`;
+    if (token.startsWith('**') || token.startsWith('__')) {
+      nodes.push(<strong key={tokenKey}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('*') || token.startsWith('_')) {
+      nodes.push(<em key={tokenKey}>{token.slice(1, -1)}</em>);
+    } else if (token.startsWith('`')) {
+      nodes.push(<code className="message-inline-code" key={tokenKey}>{token.slice(1, -1)}</code>);
+    } else {
+      const url = token.replace(/[.,!?;:)\]}]+$/u, '');
+      let safeUrl: string | null = null;
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') safeUrl = parsed.href;
+      } catch { /* Leave malformed URLs as plain text. */ }
+      if (safeUrl) nodes.push(<a className="message-link" href={safeUrl} target="_blank" rel="noopener noreferrer" key={tokenKey}>{url}</a>);
+      else nodes.push(url);
+      if (url.length < token.length) nodes.push(token.slice(url.length));
+    }
+    cursor = match.index + token.length;
   }
 
-  if (!nodes.length) return text;
   if (cursor < text.length) nodes.push(text.slice(cursor));
   return nodes;
+}
+
+function renderFormattedText(text: string, partIndex: number) {
+  const lines = text.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let index = 0;
+  let key = 0;
+  const isListLine = (line: string) => /^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(line);
+  const isBlockStart = (line: string) => /^\s{0,3}#{1,6}\s+/.test(line) || isListLine(line) || /^\s*>\s?/.test(line);
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) { index += 1; continue; }
+    const blockKey = `text-${partIndex}-${key++}`;
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const Heading = heading[1].length <= 2 ? 'h3' : 'h4';
+      blocks.push(<Heading className="message-heading" key={blockKey}>{renderInline(heading[2], blockKey)}</Heading>);
+      index += 1;
+      continue;
+    }
+
+    const listMatch = line.match(/^\s*(?:([-*+])|(\d+)[.)])\s+(.+)$/);
+    if (listMatch) {
+      const ordered = Boolean(listMatch[2]);
+      const items: ReactNode[] = [];
+      while (index < lines.length) {
+        const item = lines[index].match(/^\s*(?:([-*+])|(\d+)[.)])\s+(.+)$/);
+        if (!item || Boolean(item[2]) !== ordered) break;
+        items.push(<li key={`${blockKey}-item-${items.length}`}>{renderInline(item[3], `${blockKey}-item-${items.length}`)}</li>);
+        index += 1;
+      }
+      blocks.push(ordered ? <ol className="message-list-format" key={blockKey}>{items}</ol> : <ul className="message-list-format" key={blockKey}>{items}</ul>);
+      continue;
+    }
+
+    if (/^\s*>\s?/.test(line)) {
+      const quoteLines: string[] = [];
+      while (index < lines.length && /^\s*>\s?/.test(lines[index])) quoteLines.push(lines[index++].replace(/^\s*>\s?/, ''));
+      blocks.push(<blockquote className="message-quote" key={blockKey}>{renderInline(quoteLines.join(' '), blockKey)}</blockquote>);
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (index < lines.length && lines[index].trim() && (paragraph.length === 0 || !isBlockStart(lines[index]))) paragraph.push(lines[index++]);
+    blocks.push(<p className="message-text" key={blockKey}>{renderInline(paragraph.join('\n'), blockKey)}</p>);
+  }
+  return blocks;
 }
 
 function splitMessage(content: string): MessagePart[] {
@@ -73,7 +127,7 @@ export function MessageContent({ content }: { content: string }) {
     {splitMessage(text).map((part, index) => part.type === 'code'
       ? <CodeBlock key={`code-${index}`} code={part.value} language={part.language} />
       : part.value
-        ? <p className="message-text" key={`text-${index}`}>{renderLinkedText(part.value)}</p>
+        ? <div className="message-formatted-text" key={`text-${index}`}>{renderFormattedText(part.value, index)}</div>
         : null)}
     {files.length > 0 && <div className="chat-attachments">{files.map((file) => {
       const urls = getChatFileUrls(file);
