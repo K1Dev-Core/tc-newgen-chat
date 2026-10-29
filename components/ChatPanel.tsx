@@ -1,15 +1,14 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { MessageCircleReply, Search, SmilePlus, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { MessageCircleReply, SmilePlus } from 'lucide-react';
 import type { ChatMessage, MessageReaction } from '@/lib/types';
 import { MessageContent } from './MessageContent';
 import type { MemberProfile } from './ProfileDialog';
-import { parseChatContent } from '@/lib/chat-files';
 
 const REACTION_OPTIONS = ['👍', '❤️', '😂', '😮', '🙏'];
 
-export function ChatPanel({ roomName, messages, typingNames, memberProfiles, reactions, viewerId, onOpenProfile, onSearchMessages, onJumpToMessage, onReply, onToggleReaction }: {
+export function ChatPanel({ roomName, messages, typingNames, memberProfiles, reactions, viewerId, onOpenProfile, onJumpToMessage, onReply, onToggleReaction }: {
   roomName: string;
   messages: ChatMessage[];
   typingNames: string[];
@@ -17,18 +16,12 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
   reactions: MessageReaction[];
   viewerId: string | null;
   onOpenProfile: (profile: MemberProfile) => void;
-  onSearchMessages: (query: string) => Promise<ChatMessage[]>;
   onJumpToMessage: (messageId: string) => Promise<void>;
   onReply: (message: ChatMessage) => void;
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef(messages.length);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState('');
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
   const [jumpingToId, setJumpingToId] = useState<string | null>(null);
 
@@ -71,25 +64,8 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
           ? `${typingNames[0]} กำลังพิมพ์`
           : '';
 
-  async function runSearch(event?: FormEvent) {
-    event?.preventDefault();
-    const query = searchQuery.trim();
-    if (!query) { setSearchResults([]); setSearchError('พิมพ์คำค้นหรือชื่อคนส่งก่อน'); return; }
-    setSearching(true);
-    setSearchError('');
-    try {
-      setSearchResults(await onSearchMessages(query));
-    } catch {
-      setSearchError('ค้นหาข้อความไม่สำเร็จ ลองอีกครั้ง');
-    } finally {
-      setSearching(false);
-    }
-  }
-
   async function jumpTo(messageId: string) {
     setJumpingToId(messageId);
-    setSearchOpen(false);
-    setSearchResults([]);
     await onJumpToMessage(messageId);
   }
 
@@ -120,30 +96,6 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
   }
 
   return <section className="conversation" aria-label={`Messages in #${roomName}`}>
-    <div className="chat-search-wrap">
-      {!searchOpen
-        ? <button type="button" className="chat-search-trigger" onClick={() => setSearchOpen(true)}><Search size={15} /><span>ค้นหาข้อความในห้อง</span></button>
-        : <form className="chat-search-form" onSubmit={runSearch}>
-          <Search size={16} aria-hidden="true" />
-          <input autoFocus value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="ค้นหาข้อความหรือชื่อคนส่ง" aria-label="ค้นหาข้อความหรือชื่อคนส่ง" />
-          <button type="submit" disabled={searching} aria-label="ค้นหา">{searching ? 'กำลังค้นหา…' : 'ค้นหา'}</button>
-          <button type="button" className="chat-search-close" aria-label="ปิดการค้นหา" onClick={() => { setSearchOpen(false); setSearchResults([]); setSearchError(''); }}><X size={16} /></button>
-        </form>}
-      {searchOpen && (searchError || searchResults.length > 0 || searching || searchQuery.trim()) && <div className="chat-search-results" role="status">
-        {searchError && <p className="chat-search-empty">{searchError}</p>}
-        {searching && <p className="chat-search-empty">กำลังค้นหาประวัติแชท…</p>}
-        {!searching && !searchError && searchResults.length === 0 && searchQuery.trim() && <p className="chat-search-empty">ไม่พบข้อความที่ตรงกัน</p>}
-        {searchResults.map((result) => {
-          const parsed = parseChatContent(result.text);
-          return <button type="button" className="chat-search-result" key={result.id} onClick={() => { void jumpTo(result.id); }}>
-            <span><strong>{memberProfiles[result.senderId ?? '']?.display_name ?? result.sender}</strong><time>{result.time}</time></span>
-            <span className="chat-search-result-text">{parsed.text || parsed.files.map((file) => file.filename).join(', ') || 'ไฟล์แนบ'}</span>
-          </button>;
-        })}
-        {searchResults.length > 0 && <small>แสดง {searchResults.length} รายการล่าสุดในห้องนี้</small>}
-      </div>}
-    </div>
-
     <div className="message-list group-message-list">
       {messageGroups.map((group) => {
         const message = group[0];
