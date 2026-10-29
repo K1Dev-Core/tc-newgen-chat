@@ -142,3 +142,5 @@ body{background:#f0eff6;color:#343452}
 .chat-reaction-picker-wrap .chat-reaction-picker.chat-reaction-picker-fixed{position:fixed!important;right:auto!important;bottom:auto!important;transform:none!important;z-index:100;max-width:calc(100vw - 20px)}
 .chat-reaction-chip,.chat-reaction-chip.selected{display:grid;place-items:center;min-width:0;width:48px;height:48px;padding:0;gap:0;border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;appearance:none;-webkit-appearance:none}
 .chat-reaction-chip img{width:46px;height:46px;filter:drop-shadow(0 1px 1px #34345230)}
+.composer-wrap{z-index:40}
+@media(max-width:650px){.chat-reaction-list,.own-message .chat-reaction-list{top:-34px;right:0;left:auto;bottom:auto;width:max-content;max-width:min(260px,calc(100vw - 88px));gap:1px}.chat-reaction-chip,.chat-reaction-chip.selected{width:30px;height:30px;min-width:30px}.chat-reaction-chip img{width:28px;height:28px}.chat-reaction-legacy{font-size:14px}}
