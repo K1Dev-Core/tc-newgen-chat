@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Flame } from 'lucide-react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 type FlameRow = {
@@ -79,7 +80,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
       celebrationTimerRef.current = setTimeout(() => {
         celebrationTimerRef.current = null;
         setCelebration(null);
-      }, 5_000);
+      }, 3_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
@@ -171,7 +172,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
     </div>
     {celebration && <div className="daily-flame-celebration" role="status" aria-live="assertive" key={celebration.key}>
       <div className="daily-flame-celebration-content">
-        <video src="/fire.webm" autoPlay loop muted playsInline aria-hidden="true" />
+        <DotLottieReact className="daily-flame-animation" src="/fire.lottie" autoplay loop aria-hidden="true" />
         <strong>ขอบคุณที่จุดไฟ</strong>
         <span>คนเติมไฟวันนี้</span>
         <b>{celebration.name}</b>
