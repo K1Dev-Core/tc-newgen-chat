@@ -34,6 +34,10 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
   const [reactionPickerPosition, setReactionPickerPosition] = useState<{ left: number; top: number } | null>(null);
   const [jumpingToId, setJumpingToId] = useState<string | null>(null);
 
+  useLayoutEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+  }, []);
+
   useEffect(() => {
     const addedMessages = messages.length > previousMessageCountRef.current;
     previousMessageCountRef.current = messages.length;
@@ -125,16 +129,16 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
     </div>;
   }
 
-  function renderMessageActions(message: ChatMessage) {
+  function renderMessageActions(message: ChatMessage, canReact: boolean) {
     return <>
       <div className="chat-message-actions">
         <button type="button" className="chat-message-action" aria-label={`ตอบกลับ ${message.sender}`} title="ตอบกลับ" onClick={() => onReply(message)}><MessageCircleReply size={14} /><span>ตอบกลับ</span></button>
-        <div className="chat-reaction-picker-wrap">
+        {canReact && <div className="chat-reaction-picker-wrap">
           <button type="button" className="chat-message-action" aria-label="เพิ่ม Reaction" title="เพิ่ม Reaction" disabled={!viewerId} onClick={() => setReactionPickerFor((current) => current === message.id ? null : message.id)}><SmilePlus size={14} /><span>Reaction</span></button>
           {reactionPickerFor === message.id && <div ref={reactionPickerRef} className="chat-reaction-picker chat-reaction-picker-fixed" style={reactionPickerPosition ?? { left: 10, top: 10 }} aria-label="เลือก Reaction">
             {REACTION_OPTIONS.map((reaction) => <button type="button" key={reaction.id} aria-label={`React ${reaction.name}`} title={reaction.name} onClick={() => { void onToggleReaction(message.id, reaction.id); setReactionPickerFor(null); }}><img src={reaction.image} alt="" /></button>)}
           </div>}
-        </div>
+        </div>}
       </div>
     </>;
   }
@@ -150,14 +154,17 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
           <button type="button" className={`member-avatar avatar-${message.tone}`} aria-label={`ดูโปรไฟล์ ${senderName}`} onClick={openProfile}>{memberProfile?.avatar_url ? <img src={memberProfile.avatar_url} alt="" /> : message.avatar}</button>
           <div className="group-message-content">
             <div className="member-line"><button type="button" className="member-name-button" onClick={openProfile}>{senderName}</button><time>{message.time}</time></div>
-            <div className="group-message-items">{group.map((item) => <div id={`chat-message-${item.id}`} className={`chat-message-entry ${jumpingToId === item.id ? 'jump-highlight' : ''}`} key={item.id}>
-              {item.replyToId && <button type="button" className="chat-reply-preview" title="ไปยังข้อความต้นฉบับ" onClick={() => { void jumpTo(item.replyToId!); }}><strong>{item.replyToSender ?? 'ข้อความที่ตอบกลับ'}</strong><span>{item.replyToText || 'ไฟล์แนบ'}</span></button>}
-              <div className="chat-message-bubble-wrap">
-                <MessageContent content={item.text} />
-                {renderReactionChips(item)}
-              </div>
-              {renderMessageActions(item)}
-            </div>)}</div>
+            <div className="group-message-items">{group.map((item) => {
+              const canReact = !item.replyToId;
+              return <div id={`chat-message-${item.id}`} className={`chat-message-entry ${jumpingToId === item.id ? 'jump-highlight' : ''}`} key={item.id}>
+                {item.replyToId && <button type="button" className="chat-reply-preview" title="ไปยังข้อความต้นฉบับ" onClick={() => { void jumpTo(item.replyToId!); }}><strong>{item.replyToSender ?? 'ข้อความที่ตอบกลับ'}</strong><span>{item.replyToText || 'ไฟล์แนบ'}</span></button>}
+                <div className="chat-message-bubble-wrap">
+                  <MessageContent content={item.text} />
+                  {canReact && renderReactionChips(item)}
+                </div>
+                {renderMessageActions(item, canReact)}
+              </div>;
+            })}</div>
           </div>
         </article>;
       })}
