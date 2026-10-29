@@ -77,7 +77,7 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
   return <>
     <section className="conversation ai-chat-conversation" aria-label="บทสนทนากับ AI">
       <div className="message-list group-message-list ai-chat-message-list">
-        <div className="ai-chat-intro"><span className="ai-chat-intro-icon"><Sparkles size={17} /></span><div><strong>ห้องคุยกับ AI</strong><span>ทุกคนเห็นคำถามและคำตอบร่วมกัน · ใช้คิวกลางทีละคำถาม</span></div></div>
+        <div className="ai-chat-intro"><span className="ai-chat-intro-icon"><Sparkles size={17} /></span><div><strong>ห้องคุยกับ AI</strong><span>ถามเรื่องแชทและข้อมูลระบบได้ · สั่งเปลี่ยนชื่อหรือรูปโปรไฟล์ของตัวเองได้</span></div></div>
         {loading && <div className="chat-loading">กำลังโหลดประวัติ AI…</div>}
         {error && <div className="chat-status-error">{error}</div>}
         {!loading && !error && messages.map((message) => {
