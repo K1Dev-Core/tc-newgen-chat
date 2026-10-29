@@ -114,6 +114,18 @@ export async function POST(request: Request) {
   const { data: claimData, error: claimError } = await supabase.rpc('claim_ai_chat_job', { p_job_id: jobId });
   if (claimError) {
     console.error('[AI chat] Could not claim request.', claimError.message);
+    // A failed claim happens before the normal worker error handler. Mark the
+    // queued row as failed so it cannot leave the shared composer locked.
+    const { error: recoveryError } = await supabase
+      .from('ai_chat_jobs')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        error_message: 'เริ่มงาน AI ไม่สำเร็จ ลองส่งคำถามใหม่',
+      })
+      .eq('id', jobId)
+      .eq('status', 'queued');
+    if (recoveryError) console.error('[AI chat] Could not release queued request.', recoveryError.message);
     return NextResponse.json({ error: 'เริ่มงาน AI ไม่สำเร็จ' }, { status: 500 });
   }
   const job = (Array.isArray(claimData) ? claimData[0] : claimData) as ClaimedJob | null;
