@@ -196,7 +196,6 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
       }
       const player = playerRef.current;
       if (player?.isLoaded) {
-        if (!movingRef.current) player.setFrame(0);
         if (!movingRef.current) player.play();
       }
       movingRef.current = true;
@@ -207,8 +206,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
         movingRef.current = false;
         lastPointerRef.current = null;
         if (currentPlayer?.isLoaded) {
-          currentPlayer.stop();
-          currentPlayer.setFrame(0);
+          currentPlayer.pause();
         }
       }, IDLE_DELAY_MS);
     };
