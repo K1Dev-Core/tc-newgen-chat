@@ -157,3 +157,13 @@ body{background:#f0eff6;color:#343452}
 @keyframes ai-stream-caret{0%,48%{opacity:1}49%,100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.ai-chat-answer .message-content{transition:none}.ai-chat-message.is-streaming .chat-message-bubble-wrap::after{animation:none}}
 .message-formatted-text{display:grid;gap:7px;min-width:0}.message-formatted-text .message-text{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.message-heading{margin:0;color:inherit;font-size:1.05em;font-weight:700;line-height:1.4}.message-list-format{display:grid;gap:3px;margin:0;padding-left:1.4em}.message-list-format li{padding-left:.1em}.message-quote{margin:0;padding:4px 9px;border-left:2px solid #7775b4;color:#777691}.message-inline-code{padding:1px 4px;border:1px solid #e4e2ee;background:#f2f1f8;color:#55537f;font:inherit;font-size:.92em}
+/* Inline @mention menu in the chat composer. */
+.composer-main{position:relative}
+.mention-suggestions{position:absolute;z-index:20;left:0;bottom:calc(100% + 7px);width:min(270px,calc(100vw - 36px));padding:4px;border:1px solid #d9d7ec;background:#fbfaff;box-shadow:0 8px 22px #302d5a20}
+.mention-suggestion{display:flex;width:100%;align-items:center;gap:9px;padding:8px;border:1px solid transparent;background:transparent;color:#41405f;text-align:left;cursor:pointer}
+.mention-suggestion:hover,.mention-suggestion.active{border-color:#dedced;background:#f0eff8}
+.mention-suggestion-token{display:grid;place-items:center;flex:none;width:34px;height:30px;background:#e9e8f5;color:#5e5b9b;font:700 12px 'DM Sans',sans-serif}
+.mention-suggestion-details{display:grid;flex:1;gap:2px;min-width:0}
+.mention-suggestion-details strong{font-size:11px}
+.mention-suggestion-details small{color:#85849f;font-size:9px}
+.mention-suggestion kbd{padding:2px 5px;border:1px solid #dedced;background:#fff;color:#85849f;font:9px 'DM Sans',sans-serif}

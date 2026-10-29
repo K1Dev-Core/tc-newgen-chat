@@ -63,6 +63,9 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
   const [dragActive, setDragActive] = useState(false);
   const [sfxOpen, setSfxOpen] = useState(false);
   const [sfxSearch, setSfxSearch] = useState('');
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const busy = sending || uploading;
   const visibleSfx = useMemo(() => {
@@ -107,7 +110,45 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
       setUploadProgress(null);
     }
   }
+
+  function selectMention() {
+    const textarea = textAreaRef.current;
+    if (!textarea) return;
+    const caret = textarea.selectionStart;
+    const before = value.slice(0, caret);
+    const after = value.slice(textarea.selectionEnd);
+    const mentionMatch = /(^|\s)@[\w-]*$/u.exec(before);
+    if (!mentionMatch) return;
+    const replacement = `${mentionMatch[1]}@ai `;
+    const nextCaret = before.length - mentionMatch[0].length + replacement.length;
+    const nextValue = `${before.slice(0, before.length - mentionMatch[0].length)}${replacement}${after}`;
+    setValue(nextValue);
+    setMentionOpen(false);
+    onTyping(Boolean(nextValue.trim()));
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCaret, nextCaret);
+    });
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOpen && !event.nativeEvent.isComposing) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionActiveIndex(0);
+        return;
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+        event.preventDefault();
+        selectMention();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
+    }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submitMessage();
@@ -145,12 +186,20 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
       {uploadProgress && <div className="composer-upload-progress" role="status"><span>กำลังอัปโหลด {uploadProgress.filename} · {uploadProgress.percentage}%</span><progress max="100" value={uploadProgress.percentage} /></div>}
       {replyTarget && <div className="composer-reply-context"><div><small>กำลังตอบกลับ {replyTarget.sender}</small><span>{messagePreview(replyTarget.text)}</span></div><button type="button" aria-label="ยกเลิกการตอบกลับ" title="ยกเลิกการตอบกลับ" onClick={onCancelReply}><X size={15} /></button></div>}
       <div className="composer-main">
-        <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend || busy} value={value} onPaste={onPaste} onChange={(event) => {
+        {mentionOpen && <div id="mention-suggestions" className="mention-suggestions" role="listbox" aria-label="คำสั่งที่เรียกใช้ได้">
+          <button type="button" className={`mention-suggestion ${mentionActiveIndex === 0 ? 'active' : ''}`} role="option" aria-selected={mentionActiveIndex === 0} onPointerDown={(event) => event.preventDefault()} onClick={selectMention}>
+            <span className="mention-suggestion-token">@ai</span><span className="mention-suggestion-details"><strong>ถาม AI</strong><small>ถามผู้ช่วย AI ในห้องนี้</small></span><kbd>↵</kbd>
+          </button>
+        </div>}
+        <textarea ref={textAreaRef} aria-autocomplete="list" aria-expanded={mentionOpen} aria-controls={mentionOpen ? 'mention-suggestions' : undefined} aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend || busy} value={value} onPaste={onPaste} onChange={(event) => {
           const nextValue = event.target.value;
           if (event.nativeEvent.isTrusted) recordMascotActivity(Math.min(Math.max(0, nextValue.length - value.length), 25));
           setValue(nextValue);
+          const beforeCaret = nextValue.slice(0, event.target.selectionStart);
+          setMentionOpen(/(?:^|\s)@[\w-]*$/u.test(beforeCaret));
+          setMentionActiveIndex(0);
           onTyping(Boolean(nextValue.trim()));
-        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร · พิมพ์ @ai เพื่อถาม AI' : 'เข้าร่วมแชทก่อนเพื่อส่งข้อความ'} rows={1} />
+        }} onBlur={() => { onTyping(false); setMentionOpen(false); }} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร · พิมพ์ @ai เพื่อถาม AI' : 'เข้าร่วมแชทก่อนเพื่อส่งข้อความ'} rows={1} />
         <button className="send-button" aria-label={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} title={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} disabled={!canSend || (!value.trim() && !files.length) || busy} onClick={() => { void submitMessage(); }}>{busy ? <LoaderCircle className="send-spinner" size={17} strokeWidth={2} /> : <Send size={18} strokeWidth={1.8} />}</button>
       </div>
       <div className="composer-footer">
