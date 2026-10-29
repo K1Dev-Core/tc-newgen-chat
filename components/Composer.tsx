@@ -150,7 +150,7 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
           if (event.nativeEvent.isTrusted) recordMascotActivity(Math.min(Math.max(0, nextValue.length - value.length), 25));
           setValue(nextValue);
           onTyping(Boolean(nextValue.trim()));
-        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'เข้าร่วมแชทก่อนเพื่อส่งข้อความ'} rows={1} />
+        }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร · พิมพ์ @ai เพื่อถาม AI' : 'เข้าร่วมแชทก่อนเพื่อส่งข้อความ'} rows={1} />
         <button className="send-button" aria-label={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} title={busy ? 'กำลังส่งไฟล์หรือข้อความ' : 'ส่งข้อความ'} disabled={!canSend || (!value.trim() && !files.length) || busy} onClick={() => { void submitMessage(); }}>{busy ? <LoaderCircle className="send-spinner" size={17} strokeWidth={2} /> : <Send size={18} strokeWidth={1.8} />}</button>
       </div>
       <div className="composer-footer">

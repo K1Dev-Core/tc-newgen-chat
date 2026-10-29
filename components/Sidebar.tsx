@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Bot, ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, PanelLeftOpen, PencilRuler } from 'lucide-react';
 import type { ChatRoom, ChatServer } from '@/lib/types';
 import { PigeonLogo } from './PigeonLogo';
 import { PigeonMotion } from './PigeonMotion';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, activeAiChat, onSelectRoom, onSelectBoard, onSelectAiChat, collapsed, onToggleCollapsed, supabase }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; activeAiChat: boolean; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; onSelectAiChat: () => void; collapsed: boolean; onToggleCollapsed: () => void; supabase: SupabaseClient }) {
+export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed, supabase }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void; supabase: SupabaseClient }) {
   const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   return <aside className="sidebar">
     <div className="brand-row"><PigeonLogo className="brand-mascot" /><span className="brand-name">ทีซี นิวเจน</span><button className="icon-button collapse-button" aria-label={collapsed ? 'Expand project sidebar' : 'Collapse project sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
@@ -26,8 +26,7 @@ export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, a
             {expanded ? <FolderOpen size={15} /> : <Folder size={15} />}<span>{server.name}</span>{expanded ? <ChevronDown size={14} className="nav-trailing" /> : <ChevronRight size={14} className="nav-trailing" />}
           </button>
           {expanded && <>
-            {serverRooms.map((room) => <button className={`nav-item project-child ${!activeAiChat && !activeBoardServerId && activeRoomSlug === room.slug ? 'active' : ''}`} key={room.id} onClick={() => onSelectRoom(room.slug)} aria-label={`${room.name} channel`} data-tooltip={room.name}><Hash size={15} /><span>{room.name}</span></button>)}
-            {server.name === 'TC' && <button className={`nav-item project-child ai-chat-link ${activeAiChat ? 'active' : ''}`} onClick={onSelectAiChat} aria-label="คุยกับ AI" data-tooltip="คุยกับ AI"><Bot size={15} /><span>คุยกับ AI</span></button>}
+            {serverRooms.map((room) => <button className={`nav-item project-child ${!activeBoardServerId && activeRoomSlug === room.slug ? 'active' : ''}`} key={room.id} onClick={() => onSelectRoom(room.slug)} aria-label={`${room.name} channel`} data-tooltip={room.name}><Hash size={15} /><span>{room.name}</span></button>)}
             <button className={`nav-item project-child server-board-link ${activeBoardServerId === server.id ? 'active' : ''}`} onClick={() => onSelectBoard(server.id)} aria-label={`${server.name} shared board`} data-tooltip="บอร์ด"><PencilRuler size={15} /><span>บอร์ด</span></button>
           </>}
         </div>;

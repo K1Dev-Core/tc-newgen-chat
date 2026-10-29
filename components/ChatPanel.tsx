@@ -1,10 +1,32 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircleReply, SmilePlus } from 'lucide-react';
 import type { ChatMessage, MessageReaction } from '@/lib/types';
 import { MessageContent } from './MessageContent';
 import type { MemberProfile } from './ProfileDialog';
+import { PigeonLogo } from './PigeonLogo';
+
+function StreamingAiContent({ content, streaming, messageId }: { content: string; streaming: boolean; messageId: string }) {
+  const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(0);
+  const characters = useMemo(() => Array.from(new Intl.Segmenter('th', { granularity: 'grapheme' }).segment(content), (part) => part.segment), [content]);
+
+  useEffect(() => {
+    if (!streaming) return;
+    setAnimatedMessageId(messageId);
+    setRevealed(0);
+  }, [messageId, streaming]);
+
+  const animate = streaming || animatedMessageId === messageId;
+  useEffect(() => {
+    if (!animate || revealed >= characters.length) return;
+    const timer = window.setInterval(() => setRevealed((current) => Math.min(current + 2, characters.length)), 24);
+    return () => window.clearInterval(timer);
+  }, [animate, characters.length, revealed]);
+
+  return <MessageContent content={animate ? characters.slice(0, revealed).join('') : content} />;
+}
 
 const REACTION_OPTIONS = [
   { id: 'pigeon-love', name: 'พิราบตาหวาน', image: '/reactions/pigeon-love.png' },
@@ -15,10 +37,11 @@ const REACTION_OPTIONS = [
   { id: 'pigeon-wave', name: 'พิราบทักทาย', image: '/reactions/pigeon-wave.png' },
 ];
 
-export function ChatPanel({ roomName, messages, typingNames, memberProfiles, reactions, viewerId, onOpenProfile, onJumpToMessage, onReply, onToggleReaction }: {
+export function ChatPanel({ roomName, messages, typingNames, aiStatus, memberProfiles, reactions, viewerId, onOpenProfile, onJumpToMessage, onReply, onToggleReaction }: {
   roomName: string;
   messages: ChatMessage[];
   typingNames: string[];
+  aiStatus?: string;
   memberProfiles: Record<string, MemberProfile>;
   reactions: MessageReaction[];
   viewerId: string | null;
@@ -41,8 +64,10 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
   useEffect(() => {
     const addedMessages = messages.length > previousMessageCountRef.current;
     previousMessageCountRef.current = messages.length;
-    if (addedMessages && !jumpingToId) bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length, jumpingToId]);
+    if ((addedMessages || messages.at(-1)?.isStreaming) && !jumpingToId) {
+      bottomRef.current?.scrollIntoView({ behavior: messages.at(-1)?.isStreaming ? 'auto' : 'smooth', block: 'end' });
+    }
+  }, [messages.length, messages.at(-1)?.text, messages.at(-1)?.isStreaming, jumpingToId]);
   useEffect(() => {
     if (!jumpingToId || !messages.some((message) => message.id === jumpingToId)) return;
     const targetId = jumpingToId;
@@ -150,19 +175,19 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
         const memberProfile = message.senderId ? memberProfiles[message.senderId] : undefined;
         const senderName = memberProfile?.display_name ?? message.sender;
         const openProfile = () => { if (memberProfile) onOpenProfile(memberProfile); };
-        return <article className={`group-message ${message.role === 'self' ? 'own-message' : ''}`} key={message.id}>
-          <button type="button" className={`member-avatar avatar-${message.tone}`} aria-label={`ดูโปรไฟล์ ${senderName}`} onClick={openProfile}>{memberProfile?.avatar_url ? <img src={memberProfile.avatar_url} alt="" /> : message.avatar}</button>
+        return <article className={`group-message ${message.role === 'self' ? 'own-message' : ''} ${message.isAi ? 'ai-room-message' : ''} ${message.isStreaming ? 'is-streaming' : ''}`} key={message.id}>
+          <button type="button" className={`member-avatar avatar-${message.tone} ${message.isAi ? 'ai-room-avatar' : ''}`} aria-label={message.isAi ? 'AI' : `ดูโปรไฟล์ ${senderName}`} onClick={openProfile}>{message.isAi ? <PigeonLogo className="ai-chat-avatar-logo" /> : memberProfile?.avatar_url ? <img src={memberProfile.avatar_url} alt="" /> : message.avatar}</button>
           <div className="group-message-content">
-            <div className="member-line"><button type="button" className="member-name-button" onClick={openProfile}>{senderName}</button><time>{message.time}</time></div>
+            <div className="member-line"><button type="button" className={`member-name-button ${message.isAi ? 'ai-room-sender' : ''}`} onClick={openProfile}>{senderName}</button><time>{message.time}</time></div>
             <div className="group-message-items">{group.map((item) => {
-              const canReact = !item.replyToId;
+              const canReact = !item.replyToId && !item.isAi;
               return <div id={`chat-message-${item.id}`} className={`chat-message-entry ${jumpingToId === item.id ? 'jump-highlight' : ''}`} key={item.id}>
                 {item.replyToId && <button type="button" className="chat-reply-preview" title="ไปยังข้อความต้นฉบับ" onClick={() => { void jumpTo(item.replyToId!); }}><strong>{item.replyToSender ?? 'ข้อความที่ตอบกลับ'}</strong><span>{item.replyToText || 'ไฟล์แนบ'}</span></button>}
-                <div className="chat-message-bubble-wrap">
-                  <MessageContent content={item.text} />
+                <div className={`chat-message-bubble-wrap ${item.isAi ? 'ai-room-bubble-wrap' : ''}`}>
+                  {item.isAi ? <StreamingAiContent content={item.text} streaming={Boolean(item.isStreaming)} messageId={item.id} /> : <MessageContent content={item.text} />}
                   {canReact && renderReactionChips(item)}
                 </div>
-                {renderMessageActions(item, canReact)}
+                {!item.isAi && renderMessageActions(item, canReact)}
               </div>;
             })}</div>
           </div>
@@ -173,6 +198,7 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
         <span className="typing-dots" aria-hidden="true"><i /><i /><i /></span>
         <span>{typingText}</span>
       </div>}
+      {aiStatus && <div className="typing-indicator ai-room-status" role="status" aria-live="polite"><span className="typing-dots" aria-hidden="true"><i /><i /><i /></span><span>{aiStatus}</span></div>}
       <div ref={bottomRef} />
     </div>
   </section>;

@@ -5,7 +5,7 @@ import { stripThinkBlocks } from '@/lib/ai-chat';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-type ClaimedJob = { job_id: string; requester_name: string; prompt: string };
+type ClaimedJob = { job_id: string; requester_name: string; prompt: string; room_id: string | null };
 type HistoryMessage = { role: 'user' | 'assistant'; content: string };
 type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; tags?: string[] };
 type ChatContextMessage = { id: string; room_id: string; sender_name: string; content: string; created_at: string };
@@ -218,18 +218,22 @@ export async function POST(request: Request) {
   try {
     const { data: jobContext, error: jobContextError } = await supabase
       .from('ai_chat_jobs')
-      .select('requester_id')
+      .select('requester_id,room_id')
       .eq('id', job.job_id)
       .maybeSingle();
     if (jobContextError || !jobContext?.requester_id) throw new Error('โหลดข้อมูลผู้ถามไม่สำเร็จ');
     const requesterId = jobContext.requester_id as string;
+    const roomId = typeof job.room_id === 'string' ? job.room_id : typeof jobContext.room_id === 'string' ? jobContext.room_id : null;
     const nameChange = parseNameChange(job.prompt);
     const avatarChange = parseAvatarChange(job.prompt);
-    const { data: recentAiMessages } = await supabase
-      .from('ai_chat_messages')
-      .select('role,content')
-      .order('created_at', { ascending: false })
-      .limit(8);
+    const recentRoomJobs = roomId
+      ? await supabase.from('ai_chat_jobs').select('id').eq('room_id', roomId).order('created_at', { ascending: false }).limit(8)
+      : null;
+    if (recentRoomJobs?.error) throw new Error('โหลดประวัติ AI ของห้องไม่สำเร็จ');
+    const recentRoomJobIds = (recentRoomJobs?.data ?? []).map((item: { id: string }) => item.id);
+    const { data: recentAiMessages } = recentRoomJobIds.length
+      ? await supabase.from('ai_chat_messages').select('role,content').in('job_id', recentRoomJobIds).order('created_at', { ascending: false }).limit(16)
+      : { data: [] };
     const awaitingProfileChoice = ((recentAiMessages ?? []) as HistoryMessage[])
       .some((message) => message.role === 'assistant' && /(?:เลือกรูป|เลือกโปรไฟล์|รายชื่อโปรไฟล์|ตัวเลือกโปรไฟล์)/iu.test(message.content));
     let profileChoices: ProfileChoice[] = [];
@@ -283,9 +287,19 @@ export async function POST(request: Request) {
     }
 
     const needsProfileCatalog = /(?:โปรไฟล์|รูป|ภาพ|avatar|profile)/iu.test(job.prompt);
+    const roomJobsResult = roomId
+      ? await supabase.from('ai_chat_jobs').select('id').eq('room_id', roomId).order('created_at', { ascending: false }).limit(12)
+      : { data: [], error: null };
+    if (roomJobsResult.error) throw new Error('โหลดประวัติ AI ของห้องไม่สำเร็จ');
+    const roomJobIds = (roomJobsResult.data ?? []).map((item: { id: string }) => item.id);
     const [historyResult, chatResult, roomsResult, serversResult, profileResult, distanceResult, flamesResult, profileChoicesResult] = await Promise.all([
-      supabase.from('ai_chat_messages').select('role,content').order('created_at', { ascending: false }).limit(12),
-      supabase.from('messages').select('id,room_id,sender_name,content,created_at').order('created_at', { ascending: false }).limit(120),
+      roomJobIds.length
+        ? supabase.from('ai_chat_messages').select('role,content').in('job_id', roomJobIds).order('created_at', { ascending: false }).limit(24)
+        : Promise.resolve({ data: [], error: null }),
+      (() => {
+        const query = supabase.from('messages').select('id,room_id,sender_name,content,created_at').order('created_at', { ascending: false }).limit(120);
+        return roomId ? query.eq('room_id', roomId) : query;
+      })(),
       supabase.from('chat_rooms').select('id,server_id,name'),
       supabase.from('servers').select('id,name'),
       supabase.from('profiles').select('display_name,avatar_url').eq('id', requesterId).maybeSingle(),
@@ -331,7 +345,8 @@ export async function POST(request: Request) {
     const userProfile = profileResult.data as { display_name: string; avatar_url: string | null } | null;
     const profileContextChoices = (profileChoicesResult.data ?? []) as ProfileChoice[];
     const profileLabels = profileContextChoices.map((choice) => `${choice.name} (${choice.description})`).join(' · ');
-    const serverLabels = rooms.map((room) => `${serverById.get(room.server_id) ?? 'Server'} / ${room.name}`).join(' · ');
+    const activeRoom = roomId ? rooms.find((room) => room.id === roomId) : null;
+    const serverLabels = activeRoom ? `${serverById.get(activeRoom.server_id) ?? 'Server'} / ${activeRoom.name}` : 'ห้อง AI เดิม';
     const totalMeters = Number((distanceResult.data as { total_meters?: number | string } | null)?.total_meters ?? 0);
     const flameSummary = ((flamesResult.data ?? []) as Array<{ flame_count: number; last_fueled_date: string | null; today_fueled_name: string | null }>)
       .map((flame) => `ไฟแชท ${flame.flame_count} วัน, เติมล่าสุด ${flame.last_fueled_date ?? 'ยังไม่มี'}, คนเติมวันนี้ ${flame.today_fueled_name ?? 'ยังไม่มี'}`).join(' · ');

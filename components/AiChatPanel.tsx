@@ -46,6 +46,7 @@ export type AiChatMessage = {
 
 export type AiChatJob = {
   id: string;
+  room_id: string | null;
   requester_id: string;
   requester_name: string;
   prompt: string;

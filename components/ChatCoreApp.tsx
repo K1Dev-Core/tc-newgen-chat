@@ -6,7 +6,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { ChatPanel } from './ChatPanel';
-import { AiChatPanel, type AiChatJob, type AiChatMessage } from './AiChatPanel';
+import type { AiChatJob, AiChatMessage } from './AiChatPanel';
 import { BoardPanel } from './BoardPanel';
 import { Composer } from './Composer';
 import { Toast } from './Toast';
@@ -149,14 +149,10 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [activeRoomSlug, setActiveRoomSlug] = useState(DEFAULT_ROOM_SLUG);
   const [activeBoardServerId, setActiveBoardServerId] = useState<string | null>(null);
-  const [activeAiChat, setActiveAiChat] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiChatMessages, setAiChatMessages] = useState<AiChatMessage[]>([]);
   const [aiChatJobs, setAiChatJobs] = useState<AiChatJob[]>([]);
   const [aiChatConfigured, setAiChatConfigured] = useState<boolean | null>(null);
-  const [aiChatLoading, setAiChatLoading] = useState(false);
-  const [aiChatError, setAiChatError] = useState('');
-  const [aiChatSending, setAiChatSending] = useState(false);
   const [reactionRows, setReactionRows] = useState<MessageReaction[]>([]);
   const [replyTarget, setReplyTarget] = useState<ChatMessage | null>(null);
   const [typingNames, setTypingNames] = useState<string[]>([]);
@@ -168,11 +164,35 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const activeRoom = rooms.find((room) => room.slug === activeRoomSlug);
   const activeBoardServer = activeBoardServerId ? servers.find((server) => server.id === activeBoardServerId) : undefined;
-  const activeServer = activeAiChat ? servers.find((server) => server.name === 'TC') : activeBoardServer ?? (activeRoom ? servers.find((server) => server.id === activeRoom.server_id) : undefined);
-  const activeAiJob = aiChatJobs.find((job) => job.status === 'queued' || job.status === 'running') ?? null;
-  const newestAiJob = aiChatJobs.at(-1) ?? null;
-  const latestFailedAiJob = newestAiJob?.status === 'failed' ? newestAiJob : null;
+  const activeServer = activeBoardServer ?? (activeRoom ? servers.find((server) => server.id === activeRoom.server_id) : undefined);
   const roomId = activeRoom?.id ?? '';
+  const roomAiJobs = aiChatJobs.filter((job) => job.room_id === roomId);
+  const roomAiJobIds = new Set(roomAiJobs.map((job) => job.id));
+  const roomAiMessages = aiChatMessages.filter((message) => message.role === 'assistant' && roomAiJobIds.has(message.job_id));
+  const aiReplyMessages: ChatMessage[] = roomAiMessages.map((message) => {
+    const job = roomAiJobs.find((item) => item.id === message.job_id);
+    return {
+      id: message.id,
+      role: 'friend',
+      sender: 'AI',
+      senderId: null,
+      avatar: 'AI',
+      tone: 'lavender',
+      text: message.content,
+      time: new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at)),
+      createdAt: message.created_at,
+      isAi: true,
+      isStreaming: job?.status === 'running',
+    };
+  });
+  const visibleMessages = [...messages, ...aiReplyMessages].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const activeRoomAiJob = roomAiJobs.find((job) => job.status === 'running' || job.status === 'queued');
+  const latestRoomAiFailure = [...roomAiJobs].reverse().find((job) => job.status === 'failed');
+  const aiStatus = activeRoomAiJob?.status === 'running'
+    ? `${activeRoomAiJob.requester_name} กำลังคุยกับ AI ในคิวกลาง`
+    : activeRoomAiJob?.status === 'queued'
+      ? `คำถามของ ${activeRoomAiJob.requester_name} เข้าคิว AI แล้ว`
+      : latestRoomAiFailure?.error_message ? `AI ตอบไม่สำเร็จ: ${latestRoomAiFailure.error_message}` : undefined;
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -196,6 +216,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   const seenSfxEventsRef = useRef(new Set<string>());
   const sfxCooldownUntilRef = useRef(0);
   const pendingReactionsRef = useRef(new Set<string>());
+  const aiDispatchingJobsRef = useRef(new Set<string>());
 
   useEffect(() => {
     let sharedClientId = '';
@@ -339,21 +360,17 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }, [supabase]);
 
   useEffect(() => {
-    if (!activeAiChat) return;
     let alive = true;
-    setAiChatLoading(true);
-    setAiChatError('');
-
     const mergeMessage = (row: AiChatMessage) => {
       setAiChatMessages((current) => [...current.filter((message) => message.id !== row.id), row]
-        .sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-100));
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-300));
     };
     const mergeJob = (row: AiChatJob) => {
       setAiChatJobs((current) => [...current.filter((job) => job.id !== row.id), row]
-        .sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-30));
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-250));
     };
 
-    const channel = supabase.channel('shared-ai-chat').on('postgres_changes',
+    const channel = supabase.channel('shared-ai-chat-queue').on('postgres_changes',
       { event: '*', schema: 'public', table: 'ai_chat_messages' },
       (payload) => { if (payload.eventType !== 'DELETE') mergeMessage(payload.new as AiChatMessage); },
     ).on('postgres_changes',
@@ -370,25 +387,51 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
         if (alive) setAiChatConfigured(false);
       }
 
-      const [messageResult, jobResult] = await Promise.all([
-        supabase.from('ai_chat_messages').select('id,job_id,role,sender_id,sender_name,content,created_at').order('created_at', { ascending: false }).limit(100),
-        supabase.from('ai_chat_jobs').select('id,requester_id,requester_name,prompt,status,error_message,created_at').order('created_at', { ascending: false }).limit(30),
-      ]);
+      const { data: jobs, error: jobsError } = await supabase.from('ai_chat_jobs')
+        .select('id,room_id,requester_id,requester_name,prompt,status,error_message,created_at')
+        .order('created_at', { ascending: false }).limit(250);
       if (!alive) return;
-      if (messageResult.error || jobResult.error) {
-        setAiChatError('โหลดห้อง AI ไม่สำเร็จ กรุณารัน migration ของ AI Chat ใน Supabase');
-      } else {
-        (messageResult.data as AiChatMessage[] | null)?.reverse().forEach(mergeMessage);
-        (jobResult.data as AiChatJob[] | null)?.reverse().forEach(mergeJob);
+      if (jobsError) {
+        console.error('[AI chat] Could not load the shared queue.', jobsError.message);
+        return;
       }
-      setAiChatLoading(false);
+      const loadedJobs = (jobs ?? []) as AiChatJob[];
+      loadedJobs.reverse().forEach(mergeJob);
+      const jobIds = loadedJobs.map((job) => job.id);
+      if (!jobIds.length) return;
+      const { data: chatMessages, error: messagesError } = await supabase.from('ai_chat_messages')
+        .select('id,job_id,role,sender_id,sender_name,content,created_at')
+        .in('job_id', jobIds).order('created_at', { ascending: true }).limit(500);
+      if (!alive) return;
+      if (messagesError) console.error('[AI chat] Could not load room replies.', messagesError.message);
+      else (chatMessages ?? []).forEach((message) => mergeMessage(message as AiChatMessage));
     })();
 
     return () => { alive = false; void supabase.removeChannel(channel); };
-  }, [activeAiChat, supabase]);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (aiChatConfigured !== true || aiChatJobs.some((job) => job.status === 'running')) return;
+    const nextJob = aiChatJobs.find((job) => job.status === 'queued');
+    if (!nextJob || aiDispatchingJobsRef.current.has(nextJob.id)) return;
+    aiDispatchingJobsRef.current.add(nextJob.id);
+    void fetch('/api/ai/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId: nextJob.id }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        notify(result.error ?? 'เริ่มประมวลผลคำถาม AI ไม่สำเร็จ');
+      }
+    }).catch((error) => {
+      console.error('[AI chat] Queue dispatch failed.', error);
+    }).finally(() => {
+      aiDispatchingJobsRef.current.delete(nextJob.id);
+    });
+  }, [aiChatConfigured, aiChatJobs]);
 
   function selectRoom(slug: string) {
-    setActiveAiChat(false);
     setActiveBoardServerId(null);
     if (slug === activeRoomSlug) { setMobileSidebarOpen(false); return; }
     setLoading(true);
@@ -402,57 +445,8 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   function selectBoard(serverId: string) {
-    setActiveAiChat(false);
     setActiveBoardServerId(serverId);
     setMobileSidebarOpen(false);
-  }
-
-  function selectAiChat() {
-    setActiveBoardServerId(null);
-    setActiveAiChat(true);
-    setMobileSidebarOpen(false);
-  }
-
-  async function sendAiChatPrompt(prompt: string): Promise<boolean> {
-    if (!user || !displayName || activeAiJob || aiChatConfigured !== true) return false;
-    setAiChatSending(true);
-    try {
-      const { data, error } = await supabase.rpc('enqueue_ai_chat_job', { p_prompt: prompt });
-      if (error || typeof data !== 'string') {
-        const busy = error?.message?.toLocaleLowerCase().includes('busy');
-        notify(busy ? 'มีคนกำลังใช้ AI อยู่ รอสักครู่แล้วลองใหม่' : 'ส่งคำถามเข้า AI ไม่สำเร็จ ตรวจ migration และลองอีกครั้ง');
-        return false;
-      }
-
-      const jobId = data;
-      setAiChatJobs((current) => [...current, {
-        id: jobId,
-        requester_id: user.id,
-        requester_name: displayName,
-        prompt,
-        status: 'queued' as const,
-        error_message: null,
-        created_at: new Date().toISOString(),
-      }].slice(-30));
-
-      const response = await fetch('/api/ai/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId }),
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({})) as { error?: string };
-        notify(result.error ?? 'เริ่มประมวลผลคำถามไม่สำเร็จ');
-        return false;
-      }
-      return true;
-    } catch (error) {
-      console.error('[AI chat] Could not submit prompt.', error);
-      notify('เชื่อมต่อห้อง AI ไม่สำเร็จ ลองอีกครั้ง');
-      return false;
-    } finally {
-      setAiChatSending(false);
-    }
   }
 
   const messageIdsKey = messages.map((message) => message.id).join(',');
@@ -746,6 +740,32 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       }
       const [message] = await hydrateMessageReplies(supabase, [data as MessageRow], user.id);
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      const aiMention = text.match(/(?:^|\s)@ai(?=\s|$)/iu);
+      if (aiMention) {
+        const prompt = text.replace(/(?:^|\s)@ai(?=\s|$)/iu, ' ').trim();
+        if (!prompt) {
+          notify('พิมพ์คำถามต่อจาก @ai ด้วยนะ');
+        } else if (aiChatConfigured !== true) {
+          notify('ส่งข้อความแล้ว แต่ AI ยังไม่พร้อมใช้งาน');
+        } else {
+          const { data: jobId, error: queueError } = await supabase.rpc('enqueue_room_ai_job', { p_room_id: roomId, p_prompt: prompt });
+          if (queueError || typeof jobId !== 'string') {
+            console.error('[AI chat] Could not enqueue room request.', { roomId, error: queueError });
+            notify('ส่งข้อความแล้ว แต่เพิ่มคำถามเข้าแถว AI ไม่สำเร็จ');
+          } else {
+            setAiChatJobs((current) => [...current.filter((job) => job.id !== jobId), {
+              id: jobId,
+              room_id: roomId,
+              requester_id: user.id,
+              requester_name: displayName,
+              prompt,
+              status: 'queued' as const,
+              error_message: null,
+              created_at: new Date().toISOString(),
+            }].sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-250));
+          }
+        }
+      }
       return true;
     } catch (error) {
       console.error('[Chat] Message insert threw an unexpected error.', { roomId, userId: user.id, error });
@@ -806,14 +826,13 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
   }
 
   return <div className={`app-shell theme-light ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileSidebarOpen ? 'mobile-sidebar-open' : ''}`}>
-    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} activeAiChat={activeAiChat} onSelectRoom={selectRoom} onSelectBoard={selectBoard} onSelectAiChat={selectAiChat} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} supabase={supabase} />
+    <Sidebar servers={servers} rooms={rooms} activeRoomSlug={activeRoomSlug} activeBoardServerId={activeBoardServerId} onSelectRoom={selectRoom} onSelectBoard={selectBoard} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed((value) => !value)} supabase={supabase} />
     {mobileSidebarOpen && <button className="sidebar-backdrop" aria-label="Close project sidebar" onClick={() => setMobileSidebarOpen(false)} />}
     <main className="main-area">
-      <Topbar serverName={activeServer?.name ?? ''} roomName={activeAiChat ? 'คุยกับ AI' : activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={activeAiChat ? '' : roomId} viewerId={user?.id ?? null} onlineCount={onlineCount} supabase={supabase} isBoard={Boolean(activeBoardServer)} isAiChat={activeAiChat} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} memberProfiles={memberProfiles} onSearchMessages={searchMessages} onJumpToMessage={jumpToMessage} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
-      {activeAiChat ? <AiChatPanel messages={aiChatMessages} activeJob={activeAiJob} latestFailedJob={latestFailedAiJob} loading={aiChatLoading} configured={aiChatConfigured} error={aiChatError} userId={user?.id ?? null} displayName={displayName} memberProfiles={memberProfiles} sending={aiChatSending} onJoin={() => setJoinDialogOpen(true)} onSend={sendAiChatPrompt} />
-        : activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} userName={displayName || 'ผู้เยี่ยมชม'} avatarUrl={user ? memberProfiles[user.id]?.avatar_url ?? null : null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
-          : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={messages} typingNames={typingNames} memberProfiles={memberProfiles} reactions={reactionRows} viewerId={user?.id ?? null} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} onJumpToMessage={jumpToMessage} onReply={setReplyTarget} onToggleReaction={toggleReaction} />}
-      {!activeBoardServer && !activeAiChat && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} replyTarget={replyTarget} onCancelReply={() => setReplyTarget(null)} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
+      <Topbar serverName={activeServer?.name ?? ''} roomName={activeBoardServer ? 'บอร์ด' : activeRoom?.name ?? ''} roomId={roomId} viewerId={user?.id ?? null} onlineCount={onlineCount} supabase={supabase} isBoard={Boolean(activeBoardServer)} onToggleSidebar={() => setMobileSidebarOpen((open) => !open)} profile={user && displayName ? memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null } : null} memberProfiles={memberProfiles} onSearchMessages={searchMessages} onJumpToMessage={jumpToMessage} onOpenProfile={() => { if (user && displayName) setActiveProfile({ profile: memberProfiles[user.id] ?? { id: user.id, display_name: displayName, avatar_url: null }, editable: true }); }} />
+      {activeBoardServer ? <BoardPanel serverId={activeBoardServer.id} serverName={activeBoardServer.name} supabase={supabase} canEdit={Boolean(user && displayName)} userId={user?.id ?? null} userName={displayName || 'ผู้เยี่ยมชม'} avatarUrl={user ? memberProfiles[user.id]?.avatar_url ?? null : null} onJoin={() => setJoinDialogOpen(true)} onNotify={notify} />
+        : roomError ? <div className="chat-status-error">{roomError}</div> : loading ? <div aria-hidden="true" /> : <ChatPanel roomName={activeRoom?.name ?? ''} messages={visibleMessages} typingNames={typingNames} aiStatus={aiStatus} memberProfiles={memberProfiles} reactions={reactionRows} viewerId={user?.id ?? null} onOpenProfile={(profile) => setActiveProfile({ profile, editable: profile.id === user?.id })} onJumpToMessage={jumpToMessage} onReply={setReplyTarget} onToggleReaction={toggleReaction} />}
+      {!activeBoardServer && <Composer canSend={Boolean(user && displayName && roomId && !roomError)} sending={sendingMessage} sfxCooldownRemaining={sfxCooldownRemaining} replyTarget={replyTarget} onCancelReply={() => setReplyTarget(null)} onOpenJoin={() => setJoinDialogOpen(true)} onSend={sendMessage} onUploadFile={uploadFile} onNotify={notify} onTyping={broadcastTyping} onPlaySfx={broadcastSfx} />}
     </main>
     {activeSfx && <aside key={activeSfx.eventId} className="mini-sfx-player" role="status" aria-live="polite" aria-label={`${activeSfx.item.name} เล่นโดย ${activeSfx.sender}`}>
       <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>

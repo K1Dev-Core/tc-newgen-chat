@@ -13,6 +13,8 @@ export type ChatMessage = {
   replyToId?: string | null;
   replyToSender?: string | null;
   replyToText?: string | null;
+  isAi?: boolean;
+  isStreaming?: boolean;
 };
 
 export type MessageReaction = {
