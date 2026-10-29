@@ -51,6 +51,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   const [totalMeters, setTotalMeters] = useState(0);
   const [pendingMeters, setPendingMeters] = useState(0);
   const [animatedMeters, setAnimatedMeters] = useState(0);
+  const [counterReady, setCounterReady] = useState(false);
   const playerRef = useRef<DotLottie | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const movingRef = useRef(false);
@@ -58,6 +59,8 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
   const walkedPixelsRef = useRef(0);
   const syncingRef = useRef(false);
   const animatedMetersRef = useRef(0);
+  const counterReadyRef = useRef(false);
+  const serverMetersRef = useRef(0);
   const displayedMeters = totalMeters + pendingMeters;
   const targetMetersRef = useRef(displayedMeters);
   const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,6 +74,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
 
   useEffect(() => {
     targetMetersRef.current = displayedMeters;
+    if (!counterReady) return;
     const schedule = () => {
       if (countTimerRef.current || animatedMetersRef.current === targetMetersRef.current) return;
       const gap = Math.abs(targetMetersRef.current - animatedMetersRef.current);
@@ -89,7 +93,7 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
     };
     scheduleCountRef.current = schedule;
     schedule();
-  }, [displayedMeters]);
+  }, [counterReady, displayedMeters]);
 
   useEffect(() => () => {
     if (countTimerRef.current) clearTimeout(countTimerRef.current);
@@ -113,7 +117,22 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
     const clientId = getActivityClientId();
     const refreshTotal = (value: unknown) => {
       const meters = Number(value);
-      if (alive && Number.isFinite(meters) && meters >= 0) setTotalMeters(meters);
+      if (!alive || !Number.isFinite(meters) || meters < 0) return;
+      if (!counterReadyRef.current) {
+        counterReadyRef.current = true;
+        animatedMetersRef.current = meters;
+        setAnimatedMeters(meters);
+        setCounterReady(true);
+      }
+      serverMetersRef.current = Math.max(serverMetersRef.current, meters);
+      setTotalMeters(serverMetersRef.current);
+    };
+    const finishInitialLoad = () => {
+      if (counterReadyRef.current) return;
+      counterReadyRef.current = true;
+      animatedMetersRef.current = serverMetersRef.current;
+      setAnimatedMeters(serverMetersRef.current);
+      setCounterReady(true);
     };
 
     const channel = supabase.channel('mascot-run-distance').on(
@@ -123,7 +142,9 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
     ).subscribe((status) => {
       if (status !== 'SUBSCRIBED') return;
       void supabase.from('mascot_run_stats').select('total_meters').eq('id', 1).maybeSingle().then(({ data, error }) => {
-        if (!error && data) refreshTotal(data.total_meters);
+        if (error) finishInitialLoad();
+        else if (data) refreshTotal(data.total_meters);
+        else finishInitialLoad();
       });
     });
 
