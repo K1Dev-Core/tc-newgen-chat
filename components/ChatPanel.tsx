@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { MessageCircleReply, SmilePlus } from 'lucide-react';
 import type { ChatMessage, MessageReaction } from '@/lib/types';
 import { MessageContent } from './MessageContent';
@@ -29,7 +29,9 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef(messages.length);
+  const reactionPickerRef = useRef<HTMLDivElement>(null);
   const [reactionPickerFor, setReactionPickerFor] = useState<string | null>(null);
+  const [reactionPickerPosition, setReactionPickerPosition] = useState<{ left: number; top: number } | null>(null);
   const [jumpingToId, setJumpingToId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,32 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
     });
     return () => cancelAnimationFrame(frame);
   }, [jumpingToId, messages]);
+
+  useLayoutEffect(() => {
+    if (!reactionPickerFor) { setReactionPickerPosition(null); return; }
+    const updatePosition = () => {
+      const picker = reactionPickerRef.current;
+      const anchor = picker?.parentElement;
+      if (!picker || !anchor) return;
+      const anchorRect = anchor.getBoundingClientRect();
+      const pickerRect = picker.getBoundingClientRect();
+      const margin = 10;
+      const maxLeft = Math.max(margin, window.innerWidth - pickerRect.width - margin);
+      const left = Math.min(Math.max(margin, anchorRect.right - pickerRect.width), maxLeft);
+      const above = anchorRect.top - pickerRect.height - 8;
+      const below = anchorRect.bottom + 8;
+      const maxTop = Math.max(margin, window.innerHeight - pickerRect.height - margin);
+      const top = above >= margin ? above : Math.min(below, maxTop);
+      setReactionPickerPosition({ left, top });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [reactionPickerFor]);
 
   const messageGroups: ChatMessage[][] = [];
   for (const message of messages) {
@@ -91,7 +119,7 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
       {[...counts].map(([emoji, value]) => {
         const option = REACTION_OPTIONS.find((item) => item.id === emoji);
         return <button type="button" key={emoji} className={`chat-reaction-chip ${value.mine ? 'selected' : ''}`} aria-label={`${option?.name ?? emoji} ${value.count}`} aria-pressed={value.mine} disabled={!viewerId} title={viewerId ? `กดเพื่อ${value.mine ? 'นำ' : 'เพิ่ม'} ${option?.name ?? emoji}` : 'เข้าร่วมแชทก่อนจึงกด Reaction ได้'} onClick={() => { void onToggleReaction(message.id, emoji); }}>
-          {option ? <img src={option.image} alt="" /> : <span className="chat-reaction-legacy">{emoji}</span>}<span>{value.count}</span>
+          {option ? <img src={option.image} alt="" /> : <span className="chat-reaction-legacy">{emoji}</span>}
         </button>;
       })}
     </div>;
@@ -103,7 +131,7 @@ export function ChatPanel({ roomName, messages, typingNames, memberProfiles, rea
         <button type="button" className="chat-message-action" aria-label={`ตอบกลับ ${message.sender}`} title="ตอบกลับ" onClick={() => onReply(message)}><MessageCircleReply size={14} /><span>ตอบกลับ</span></button>
         <div className="chat-reaction-picker-wrap">
           <button type="button" className="chat-message-action" aria-label="เพิ่ม Reaction" title="เพิ่ม Reaction" disabled={!viewerId} onClick={() => setReactionPickerFor((current) => current === message.id ? null : message.id)}><SmilePlus size={14} /><span>Reaction</span></button>
-          {reactionPickerFor === message.id && <div className="chat-reaction-picker" aria-label="เลือก Reaction">
+          {reactionPickerFor === message.id && <div ref={reactionPickerRef} className="chat-reaction-picker chat-reaction-picker-fixed" style={reactionPickerPosition ?? { left: 10, top: 10 }} aria-label="เลือก Reaction">
             {REACTION_OPTIONS.map((reaction) => <button type="button" key={reaction.id} aria-label={`React ${reaction.name}`} title={reaction.name} onClick={() => { void onToggleReaction(message.id, reaction.id); setReactionPickerFor(null); }}><img src={reaction.image} alt="" /></button>)}
           </div>}
         </div>
