@@ -3,40 +3,49 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import type { DotLottie } from '@lottiefiles/dotlottie-react';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { MASCOT_ACTIVITY_EVENT, recordMascotActivity, restorePendingMascotMeters, takePendingMascotMeters } from '@/lib/mascot-activity';
 
 const IDLE_DELAY_MS = 850;
-const PIGEON_PHRASES = [
-  'จิ๊บจิ๊บ', 'หวัดดี!', 'นกมาแล้ว', 'อยู่นี่น้า', 'ฮัลโหลๆ', 'แวะมาทัก', 'คุยกันเถอะ', 'มีใครอยู่ไหม',
-  'ไปไหนอะ', 'บินวนแป๊บ', 'ฝากข้อความด้วย', 'รออ่านอยู่นะ', 'พิมพ์มาเลย', 'เย้!', 'โอเคเลย', 'สุดยอด',
-  'ขอบคุณน้า', 'ส่งใจให้', 'ฮิฮิ', 'อุ๊บส์', 'วันนี้สดใส', 'แอบอ่านอยู่', 'แวะมาแป๊บ', 'มาแล้วจ้า',
-  'ทีมเราสู้!', 'พร้อมลุย', 'ลุยกันเลย', 'ขอพักแป๊บ', 'พักกินน้ำก่อน', 'พักสายตาบ้าง', 'อย่าลืมยิ้ม', 'ใจเย็นๆ',
-  'คิดถึงนะ', 'อยู่เป็นเพื่อน', 'เจอกันในแชท', 'ชวนคุยหน่อย', 'มีอะไรเล่าไหม', 'วันนี้เป็นไง', 'ข่าวดีไหม', 'บินมาส่งข่าว',
-  'ส่งกำลังใจ', 'เอ้า ลุย!', 'จิ๊บเดียว', 'บินก่อนนะ', 'ปีกพร้อม!', 'ปีกกระพือแล้ว', 'ขอบินผ่าน', 'มาเช็กชื่อ',
-  'ใครส่งข้อความ', 'คุยได้เลย', 'อย่าหายไปนะ', 'รออยู่นี่', 'เติมพลัง!', 'น่ารักอะ', 'ง่วงนิดหน่อย', 'หิวแล้ว',
-  'ขอข้าวหน่อย', 'ฝนจะตกไหม', 'คิดออกยัง', 'เยี่ยมมาก', 'แป๊บเดียวนะ', 'มีเรื่องเมาท์ไหม', 'ทักทายทุกคน', 'วันนี้เก่งมาก',
-  'ขอเกาะขอบจอ', 'มาเฝ้าแชท', 'ข้อความมาแล้ว', 'บินมาไวๆ', 'คิดถึงปีก', 'ยิ้มหน่อยสิ', 'พักก่อนก็ได้', 'ทุกคนโอเคไหม',
-];
+const METERS_PER_POINTER_PIXEL = 1 / 250;
+const ACTIVITY_CLIENT_ID_KEY = 'tc-newgen:mascot-activity-client-id';
 
-function nextPhrase(previous: string) {
-  const choices = PIGEON_PHRASES.filter((phrase) => phrase !== previous);
-  return choices[Math.floor(Math.random() * choices.length)];
+function getActivityClientId() {
+  const makeId = () => globalThis.crypto?.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+    const random = Math.random() * 16 | 0;
+    return (char === 'x' ? random : (random & 0x3 | 0x8)).toString(16);
+  });
+  try {
+    const saved = window.localStorage.getItem(ACTIVITY_CLIENT_ID_KEY);
+    if (saved) return saved;
+    const id = makeId();
+    window.localStorage.setItem(ACTIVITY_CLIENT_ID_KEY, id);
+    return id;
+  } catch {
+    return makeId();
+  }
 }
 
-export function PigeonMotion() {
-  const [phrase, setPhrase] = useState('จิ๊บจิ๊บ');
+function formatDistance(meters: number) {
+  if (meters < 1000) return `วิ่งมาแล้ว ${Math.floor(meters).toLocaleString('th-TH')} เมตร`;
+  const kilometers = (meters / 1000).toFixed(1).replace(/\.0$/, '');
+  return `วิ่งมาแล้ว ${kilometers} กิโลเมตร`;
+}
+
+function formatCompactDistance(meters: number) {
+  if (meters < 1000) return `${Math.floor(meters).toLocaleString('th-TH')} ม.`;
+  const kilometers = (meters / 1000).toFixed(1).replace(/\.0$/, '');
+  return `${kilometers} กม.`;
+}
+
+export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
+  const [totalMeters, setTotalMeters] = useState(0);
   const playerRef = useRef<DotLottie | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const movingRef = useRef(false);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const rotatePhrase = () => {
-      setPhrase((current) => nextPhrase(current));
-      timer = setTimeout(rotatePhrase, 4200 + Math.random() * 4600);
-    };
-    timer = setTimeout(rotatePhrase, 2600);
-    return () => clearTimeout(timer);
-  }, []);
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const walkedPixelsRef = useRef(0);
+  const syncingRef = useRef(false);
 
   const setPlayer = useCallback((player: DotLottie | null) => {
     playerRef.current = player;
@@ -52,9 +61,51 @@ export function PigeonMotion() {
   }, []);
 
   useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (event.pointerType !== 'mouse') return;
+    let alive = true;
+    const clientId = getActivityClientId();
+    const refreshTotal = (value: unknown) => {
+      const meters = Number(value);
+      if (alive && Number.isFinite(meters) && meters >= 0) setTotalMeters(meters);
+    };
 
+    const channel = supabase.channel('mascot-run-distance').on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'mascot_run_stats', filter: 'id=eq.1' },
+      (payload) => refreshTotal((payload.new as { total_meters?: unknown }).total_meters),
+    ).subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      void supabase.from('mascot_run_stats').select('total_meters').eq('id', 1).maybeSingle().then(({ data, error }) => {
+        if (!error && data) refreshTotal(data.total_meters);
+      });
+    });
+
+    const flush = async () => {
+      if (syncingRef.current) return;
+      const meters = takePendingMascotMeters();
+      if (!meters) return;
+      syncingRef.current = true;
+      try {
+        const { data, error } = await supabase.rpc('record_mascot_activity', {
+          p_client_id: clientId,
+          p_meters: meters,
+        });
+        if (error) throw error;
+        if (Number(data) < 0) restorePendingMascotMeters(meters);
+        else refreshTotal(data);
+      } catch (error) {
+        restorePendingMascotMeters(meters);
+        console.debug('[Mascot] Distance sync failed; activity will be retried.', error);
+      } finally {
+        syncingRef.current = false;
+      }
+    };
+
+    const interval = window.setInterval(() => { void flush(); }, 10_000);
+    const flushOnExit = () => { void flush(); };
+    document.addEventListener('visibilitychange', flushOnExit);
+    window.addEventListener('pagehide', flushOnExit);
+
+    const wakeMascot = () => {
       const player = playerRef.current;
       if (player?.isLoaded) {
         if (!movingRef.current) player.setFrame(0);
@@ -66,6 +117,7 @@ export function PigeonMotion() {
       idleTimerRef.current = setTimeout(() => {
         const currentPlayer = playerRef.current;
         movingRef.current = false;
+        lastPointerRef.current = null;
         if (currentPlayer?.isLoaded) {
           currentPlayer.stop();
           currentPlayer.setFrame(0);
@@ -73,25 +125,58 @@ export function PigeonMotion() {
       }, IDLE_DELAY_MS);
     };
 
+    const handlePointerMove = (event: PointerEvent) => {
+      if (event.pointerType !== 'mouse' || !event.isTrusted) return;
+      const previous = lastPointerRef.current;
+      lastPointerRef.current = { x: event.clientX, y: event.clientY };
+      if (previous) {
+        walkedPixelsRef.current += Math.hypot(event.clientX - previous.x, event.clientY - previous.y);
+        const meters = Math.floor(walkedPixelsRef.current * METERS_PER_POINTER_PIXEL);
+        if (meters > 0) {
+          recordMascotActivity(meters);
+          walkedPixelsRef.current -= meters / METERS_PER_POINTER_PIXEL;
+        }
+      }
+      wakeMascot();
+    };
+
+    const handleClick = (event: MouseEvent) => {
+      if (event.isTrusted) recordMascotActivity(2);
+    };
+
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('click', handleClick, { passive: true });
+    window.addEventListener(MASCOT_ACTIVITY_EVENT, wakeMascot);
     return () => {
+      alive = false;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', flushOnExit);
+      window.removeEventListener('pagehide', flushOnExit);
       window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('click', handleClick);
+      window.removeEventListener(MASCOT_ACTIVITY_EVENT, wakeMascot);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       playerRef.current?.stop();
+      void supabase.removeChannel(channel);
     };
-  }, []);
+  }, [supabase]);
 
   return (
     <div className="sidebar-mascot">
-      <span key={phrase} className="sidebar-mascot-speech" role="status" aria-live="polite">{phrase}</span>
-      <DotLottieReact
-        src="/running-pigeon.lottie"
-        autoplay={false}
-        loop
-        useFrameInterpolation={false}
-        dotLottieRefCallback={setPlayer}
-        aria-hidden="true"
-      />
+      <div className="sidebar-mascot-animation">
+        <DotLottieReact
+          src="/running-pigeon.lottie"
+          autoplay={false}
+          loop
+          useFrameInterpolation={false}
+          dotLottieRefCallback={setPlayer}
+          aria-hidden="true"
+        />
+      </div>
+      <div className="mascot-distance" aria-label={formatDistance(totalMeters)}>
+        <span className="mascot-distance-full">{formatDistance(totalMeters)}</span>
+        <span className="mascot-distance-compact">{formatCompactDistance(totalMeters)}</span>
+      </div>
     </div>
   );
 }

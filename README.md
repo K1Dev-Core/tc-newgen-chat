@@ -6,7 +6,7 @@ Next.js 16 group chat using Supabase Auth, Postgres, and Realtime. Visitors can 
 
 1. Create a Supabase project.
 2. In **Authentication → Sign In / Providers**, enable **Allow anonymous sign-ins**. The app only asks people for a display name.
-3. Run all SQL files in `supabase/migrations` in filename order in the Supabase SQL Editor. The migrations create `profiles`, `servers`, `chat_rooms`, and `messages`, seed `TC / นกพิราบสื่อสาร`, enable RLS, publish chat messages and member profile changes to Realtime, raise the message byte limit for code snippets, and add persistent message reactions and reply references.
+3. Run all SQL files in `supabase/migrations` in filename order in the Supabase SQL Editor. The migrations create `profiles`, `servers`, `chat_rooms`, and `messages`, seed `TC / นกพิราบสื่อสาร`, enable RLS, publish chat messages and member profile changes to Realtime, raise the message byte limit for code snippets, add persistent message reactions and reply references, and add the shared pigeon distance counter.
 4. Copy `.env.example` to `.env.local` and set the project's URL and publishable key:
 
 ```env
@@ -33,6 +33,7 @@ npm run dev
 - Search checks the current room's full message history by message text or sender name; selecting a result loads and scrolls to the original message.
 - Members can add or remove emoji reactions; counts and selections sync through Supabase Realtime. Visitors can see reactions but must join to add one.
 - Replies store a reference to the original message and show a preview above the composer and with the sent message. Reply references stay within the same room.
+- The sidebar pigeon counts shared distance from cursor movement, trusted clicks, typed characters, and successful sent messages. Each browser batches increments every 10 seconds; Supabase rate-limits each browser's counter updates and broadcasts the long-term total to everyone.
 - Profile names and avatar URLs are stored in `profiles`; profile edits are sent to every open client through Supabase Realtime. The picker reads the public catalog from `https://profile-image-cdn.vercel.app/api/profiles`.
 - A temporary Realtime Broadcast indicator shows who is typing; it lists up to three names and switches to a group indicator for four or more people.
 - Messages support fenced code blocks with language hints or automatic language detection, syntax highlighting, copy controls, and expand/collapse for long snippets. Use the composer’s **โค้ด** button to wrap pasted code before sending.

@@ -6,6 +6,7 @@ import hljs from 'highlight.js';
 import { formatFileSize, parseChatContent, type ChatFileAttachment } from '@/lib/chat-files';
 import type { ChatMessage } from '@/lib/types';
 import { SFX_CATALOG, type RemoteSfxItem } from '@/lib/sfx-catalog';
+import { recordMascotActivity } from '@/lib/mascot-activity';
 
 function detectCodeLanguage(text: string): string | null {
   const source = text.trim();
@@ -93,6 +94,7 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
       }
       setUploadProgress(null);
       if (await onSend(formattedMessage, uploadedFiles, replyTarget?.id)) {
+        recordMascotActivity(15);
         setValue('');
         setFiles([]);
         onCancelReply();
@@ -145,6 +147,7 @@ export function Composer({ canSend, sending, sfxCooldownRemaining, replyTarget, 
       <div className="composer-main">
         <textarea aria-label="Message # นกพิราบสื่อสาร" disabled={!canSend || busy} value={value} onPaste={onPaste} onChange={(event) => {
           const nextValue = event.target.value;
+          if (event.nativeEvent.isTrusted) recordMascotActivity(Math.min(Math.max(0, nextValue.length - value.length), 25));
           setValue(nextValue);
           onTyping(Boolean(nextValue.trim()));
         }} onBlur={() => onTyping(false)} onKeyDown={onKeyDown} placeholder={canSend ? 'ข้อความถึง # นกพิราบสื่อสาร' : 'เข้าร่วมแชทก่อนเพื่อส่งข้อความ'} rows={1} />

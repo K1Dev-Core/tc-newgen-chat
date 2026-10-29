@@ -5,8 +5,9 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, Hash, PanelLeftClose, Pa
 import type { ChatRoom, ChatServer } from '@/lib/types';
 import { PigeonLogo } from './PigeonLogo';
 import { PigeonMotion } from './PigeonMotion';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void }) {
+export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, onSelectRoom, onSelectBoard, collapsed, onToggleCollapsed, supabase }: { servers: ChatServer[]; rooms: ChatRoom[]; activeRoomSlug: string; activeBoardServerId: string | null; onSelectRoom: (slug: string) => void; onSelectBoard: (serverId: string) => void; collapsed: boolean; onToggleCollapsed: () => void; supabase: SupabaseClient }) {
   const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   return <aside className="sidebar">
     <div className="brand-row"><PigeonLogo className="brand-mascot" /><span className="brand-name">ทีซี นิวเจน</span><button className="icon-button collapse-button" aria-label={collapsed ? 'Expand project sidebar' : 'Collapse project sidebar'} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggleCollapsed}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button></div>
@@ -32,6 +33,6 @@ export function Sidebar({ servers, rooms, activeRoomSlug, activeBoardServerId, o
       })}
     </nav>
     <div className="sidebar-mascot-spacer" aria-hidden="true" />
-    <PigeonMotion />
+    <PigeonMotion supabase={supabase} />
   </aside>;
 }
