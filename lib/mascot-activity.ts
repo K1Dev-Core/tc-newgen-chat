@@ -4,7 +4,9 @@ export const MASCOT_ACTIVITY_EVENT = 'tc-newgen:mascot-activity';
 export function recordMascotActivity(meters: number) {
   if (!Number.isFinite(meters) || meters <= 0) return;
   pendingMeters = Math.min(50_000, pendingMeters + Math.floor(meters));
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(MASCOT_ACTIVITY_EVENT));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(MASCOT_ACTIVITY_EVENT, { detail: { meters: Math.floor(meters) } }));
+  }
 }
 
 export function takePendingMascotMeters(maximum = 500) {

@@ -38,14 +38,55 @@ function formatCompactDistance(meters: number) {
   return `${kilometers} กม.`;
 }
 
+function getDaysSinceStart() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((item) => item.type === type)?.value);
+  const today = Date.UTC(part('year'), part('month') - 1, part('day'));
+  const start = Date.UTC(2026, 9, 28);
+  return Math.max(0, Math.floor((today - start) / 86_400_000));
+}
+
 export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
+  const [daysSinceStart, setDaysSinceStart] = useState(getDaysSinceStart);
   const [totalMeters, setTotalMeters] = useState(0);
+  const [pendingMeters, setPendingMeters] = useState(0);
+  const [animatedMeters, setAnimatedMeters] = useState(0);
   const playerRef = useRef<DotLottie | null>(null);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const movingRef = useRef(false);
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   const walkedPixelsRef = useRef(0);
   const syncingRef = useRef(false);
+  const animatedMetersRef = useRef(0);
+  const displayedMeters = totalMeters + pendingMeters;
+
+  useEffect(() => {
+    const updateDays = () => setDaysSinceStart(getDaysSinceStart());
+    const interval = window.setInterval(updateDays, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const startValue = animatedMetersRef.current;
+    const difference = displayedMeters - startValue;
+    if (!difference) return;
+
+    let frame = 0;
+    const startedAt = performance.now();
+    const duration = 700;
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      const eased = 1 - (1 - progress) ** 3;
+      const value = Math.round(startValue + difference * eased);
+      animatedMetersRef.current = value;
+      setAnimatedMeters(value);
+      if (progress < 1) frame = window.requestAnimationFrame(animate);
+    };
+    frame = window.requestAnimationFrame(animate);
+    return () => window.cancelAnimationFrame(frame);
+  }, [displayedMeters]);
 
   const setPlayer = useCallback((player: DotLottie | null) => {
     playerRef.current = player;
@@ -91,7 +132,10 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
         });
         if (error) throw error;
         if (Number(data) < 0) restorePendingMascotMeters(meters);
-        else refreshTotal(data);
+        else {
+          refreshTotal(data);
+          setPendingMeters((current) => Math.max(0, current - meters));
+        }
       } catch (error) {
         restorePendingMascotMeters(meters);
         console.debug('[Mascot] Distance sync failed; activity will be retried.', error);
@@ -105,7 +149,11 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
     document.addEventListener('visibilitychange', flushOnExit);
     window.addEventListener('pagehide', flushOnExit);
 
-    const wakeMascot = () => {
+    const wakeMascot = (event?: Event) => {
+      const activityMeters = Number((event as CustomEvent<{ meters?: number }> | undefined)?.detail?.meters);
+      if (Number.isFinite(activityMeters) && activityMeters > 0) {
+        setPendingMeters((current) => current + activityMeters);
+      }
       const player = playerRef.current;
       if (player?.isLoaded) {
         if (!movingRef.current) player.setFrame(0);
@@ -173,9 +221,10 @@ export function PigeonMotion({ supabase }: { supabase: SupabaseClient }) {
           aria-hidden="true"
         />
       </div>
-      <div className="mascot-distance" aria-label={formatDistance(totalMeters)}>
-        <span className="mascot-distance-full">{formatDistance(totalMeters)}</span>
-        <span className="mascot-distance-compact">{formatCompactDistance(totalMeters)}</span>
+      <div className="mascot-distance" aria-label={`${formatDistance(displayedMeters)} · ผ่านมาแล้ว ${daysSinceStart} วัน`}>
+        <span className="mascot-distance-full">{formatDistance(animatedMeters)}</span>
+        <span className="mascot-distance-compact">{formatCompactDistance(animatedMeters)}</span>
+        <span className="mascot-days">ผ่านมาแล้ว {daysSinceStart.toLocaleString('th-TH')} วัน</span>
       </div>
     </div>
   );

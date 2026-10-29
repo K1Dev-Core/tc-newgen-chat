@@ -1,12 +1,13 @@
+'use client';
+
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+
 export function PigeonLogo({ className = '' }: { className?: string }) {
-  return <video
+  return <DotLottieReact
     className={`pigeon-logo ${className}`}
-    autoPlay
+    src="/pigeon-mascot.lottie"
+    autoplay
     loop
-    muted
-    playsInline
     aria-label="ทีซี นิวเจน pigeon mascot"
-  >
-    <source src="/pigeon-mascot.webm" type="video/webm" />
-  </video>;
+  />;
 }

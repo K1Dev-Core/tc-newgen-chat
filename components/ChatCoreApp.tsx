@@ -708,7 +708,7 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
       <span className="mini-sfx-vinyl" aria-hidden="true" title={`${activeSfx.item.name} · เล่นโดย ${activeSfx.sender}`}><i /></span>
       <span className="mini-sfx-sender">โดย {activeSfx.sender}</span>
     </aside>}
-    {(loading || profileLoading) && <LoadingOverlay label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />}
+    <LoadingOverlay active={loading || profileLoading} label={profileLoading ? 'กำลังโหลดโปรไฟล์…' : 'กำลังโหลดแชต…'} />
     {activeProfile && <ProfileDialog profile={activeProfile.profile} editable={activeProfile.editable} onClose={() => setActiveProfile(null)} onSave={saveProfile} onSignOut={signOut} saving={actionLoading} />}
     {joinDialogOpen && <JoinChatDialog onClose={() => setJoinDialogOpen(false)} onJoin={setName} saving={actionLoading} />}
     <Toast message={toastText} toastKey={toastKey} />

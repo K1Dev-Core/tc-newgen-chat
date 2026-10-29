@@ -1,26 +1,37 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
-export function LoadingOverlay({ label }: { label: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoReady, setVideoReady] = useState(false);
+const MIN_VISIBLE_MS = 2_400;
+
+export function LoadingOverlay({ active, label }: { active: boolean; label: string }) {
+  const [visible, setVisible] = useState(active);
+  const shownAt = useRef<number | null>(active ? Date.now() : null);
 
   useEffect(() => {
-    if (videoRef.current && videoRef.current.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      setVideoReady(true);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    if (active) {
+      shownAt.current = Date.now();
+      setVisible(true);
+    } else if (shownAt.current !== null) {
+      const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - shownAt.current));
+      timeout = setTimeout(() => {
+        setVisible(false);
+        shownAt.current = null;
+      }, remaining);
     }
-  }, []);
+    return () => { if (timeout) clearTimeout(timeout); };
+  }, [active]);
+
+  if (!visible) return null;
 
   return <div className="loading-overlay" role="status" aria-live="polite" aria-label={label}>
     <div className="loading-overlay-content">
       <div className="loading-mascot-frame">
         <span className="loading-orbit" aria-hidden="true" />
         <div className="loading-mascot-media">
-          <img className={`loading-mascot-poster${videoReady ? ' loading-mascot-poster-ready' : ''}`} src="/pigeon-loader-poster.png" fetchPriority="high" alt="" />
-          <video ref={videoRef} className={`loading-mascot${videoReady ? ' loading-mascot-ready' : ''}`} autoPlay loop muted playsInline preload="auto" aria-hidden="true" poster="/pigeon-loader-poster.png" onLoadedData={() => setVideoReady(true)}>
-          <source src="/pigeon-loader.webm" type="video/webm" />
-          </video>
+          <DotLottieReact src="/pigeon-loader.lottie" autoplay loop aria-hidden="true" />
         </div>
       </div>
       <span className="loading-label">{label}</span>
