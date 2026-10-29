@@ -1,11 +1,38 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Clock3, Send, Sparkles } from 'lucide-react';
 import { MessageContent } from './MessageContent';
 import { PigeonLogo } from './PigeonLogo';
 import type { MemberProfile } from './ProfileDialog';
 import { stripThinkBlocks } from '@/lib/ai-chat';
+
+function StreamingMessageContent({ content, jobId, streaming }: { content: string; jobId: string; streaming: boolean }) {
+  const [animatedJobId, setAnimatedJobId] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(0);
+  const characters = useMemo(() => {
+    const segmenter = new Intl.Segmenter('th', { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(content), (part) => part.segment);
+  }, [content]);
+
+  useEffect(() => {
+    if (!streaming) return;
+    setAnimatedJobId(jobId);
+    setRevealed(0);
+  }, [jobId, streaming]);
+
+  const shouldAnimate = streaming || animatedJobId === jobId;
+  useEffect(() => {
+    if (!shouldAnimate || revealed >= characters.length) return;
+    const timer = window.setInterval(() => {
+      setRevealed((current) => Math.min(current + 2, characters.length));
+    }, 24);
+    return () => window.clearInterval(timer);
+  }, [characters.length, revealed, shouldAnimate]);
+
+  const visibleContent = shouldAnimate ? characters.slice(0, revealed).join('') : content;
+  return <MessageContent content={visibleContent} />;
+}
 
 export type AiChatMessage = {
   id: string;
@@ -89,7 +116,9 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
             <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-label={message.role === 'assistant' ? 'AI' : message.sender_name} title={message.role === 'assistant' ? 'AI' : message.sender_name}>{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}</span>
             <div className="group-message-content">
               <div className="member-line"><strong className="ai-chat-sender">{message.role === 'assistant' ? 'AI' : message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
-              <div className="group-message-items"><div className="chat-message-bubble-wrap"><MessageContent content={message.role === 'assistant' ? stripThinkBlocks(message.content) : message.content} /></div></div>
+              <div className="group-message-items"><div className="chat-message-bubble-wrap">{message.role === 'assistant'
+                ? <StreamingMessageContent content={stripThinkBlocks(message.content)} jobId={message.job_id} streaming={streaming} />
+                : <MessageContent content={message.content} />}</div></div>
             </div>
           </article>;
         })}
