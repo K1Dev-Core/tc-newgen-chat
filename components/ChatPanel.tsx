@@ -5,7 +5,6 @@ import { MessageCircleReply, SmilePlus } from 'lucide-react';
 import type { ChatMessage, MessageReaction } from '@/lib/types';
 import { MessageContent } from './MessageContent';
 import type { MemberProfile } from './ProfileDialog';
-import { PigeonLogo } from './PigeonLogo';
 
 function StreamingAiContent({ content, streaming, messageId }: { content: string; streaming: boolean; messageId: string }) {
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
@@ -173,10 +172,10 @@ export function ChatPanel({ roomName, messages, typingNames, aiStatus, memberPro
       {messageGroups.map((group) => {
         const message = group[0];
         const memberProfile = message.senderId ? memberProfiles[message.senderId] : undefined;
-        const senderName = memberProfile?.display_name ?? message.sender;
+        const senderName = message.isAi ? 'นกพิราบสื่อสาร' : memberProfile?.display_name ?? message.sender;
         const openProfile = () => { if (memberProfile) onOpenProfile(memberProfile); };
         return <article className={`group-message ${message.role === 'self' ? 'own-message' : ''} ${message.isAi ? 'ai-room-message' : ''} ${message.isStreaming ? 'is-streaming' : ''}`} key={message.id}>
-          <button type="button" className={`member-avatar avatar-${message.tone} ${message.isAi ? 'ai-room-avatar' : ''}`} aria-label={message.isAi ? 'AI' : `ดูโปรไฟล์ ${senderName}`} onClick={openProfile}>{message.isAi ? <PigeonLogo className="ai-chat-avatar-logo" /> : memberProfile?.avatar_url ? <img src={memberProfile.avatar_url} alt="" /> : message.avatar}</button>
+          <button type="button" className={`member-avatar avatar-${message.tone} ${message.isAi ? 'ai-room-avatar' : ''}`} aria-label={message.isAi ? 'AI · นกพิราบสื่อสาร' : `ดูโปรไฟล์ ${senderName}`} onClick={openProfile}>{message.isAi ? <img className="ai-chat-avatar-logo" src="https://profile-image-cdn.vercel.app/profiles/nok-phirab.webp" alt="นกพิราบสื่อสาร" loading="lazy" /> : memberProfile?.avatar_url ? <img src={memberProfile.avatar_url} alt="" /> : message.avatar}</button>
           <div className="group-message-content">
             <div className="member-line"><button type="button" className={`member-name-button ${message.isAi ? 'ai-room-sender' : ''}`} onClick={openProfile}>{senderName}</button><time>{message.time}</time></div>
             <div className="group-message-items">{group.map((item) => {

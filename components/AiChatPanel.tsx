@@ -3,7 +3,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { Clock3, Send, Sparkles } from 'lucide-react';
 import { MessageContent } from './MessageContent';
-import { PigeonLogo } from './PigeonLogo';
 import type { MemberProfile } from './ProfileDialog';
 import { stripThinkBlocks } from '@/lib/ai-chat';
 
@@ -114,9 +113,9 @@ export function AiChatPanel({ messages, activeJob, latestFailedJob, loading, con
           const profile = message.role === 'user' && message.sender_id ? memberProfiles[message.sender_id] : null;
           const streaming = message.role === 'assistant' && activeJob?.status === 'running' && message.job_id === activeJob.id;
           return <article className={`group-message ai-chat-message ${own ? 'own-message' : ''} ${message.role === 'assistant' ? 'ai-chat-answer' : ''} ${streaming ? 'is-streaming' : ''}`} key={message.id}>
-            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-label={message.role === 'assistant' ? 'AI' : message.sender_name} title={message.role === 'assistant' ? 'AI' : message.sender_name}>{message.role === 'assistant' ? <PigeonLogo className="ai-chat-avatar-logo" /> : profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}</span>
+            <span className={`member-avatar ${message.role === 'assistant' ? 'ai-chat-avatar' : 'avatar-lavender'}`} aria-label={message.role === 'assistant' ? 'นกพิราบสื่อสาร' : message.sender_name} title={message.role === 'assistant' ? 'นกพิราบสื่อสาร' : message.sender_name}>{message.role === 'assistant' ? <img className="ai-chat-avatar-logo" src="https://profile-image-cdn.vercel.app/profiles/nok-phirab.webp" alt="นกพิราบสื่อสาร" loading="lazy" /> : profile?.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}</span>
             <div className="group-message-content">
-              <div className="member-line"><strong className="ai-chat-sender">{message.role === 'assistant' ? 'AI' : message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
+              <div className="member-line"><strong className="ai-chat-sender">{message.role === 'assistant' ? 'นกพิราบสื่อสาร' : message.sender_name}</strong><time>{new Intl.DateTimeFormat('th-TH', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.created_at))}</time></div>
               <div className="group-message-items"><div className="chat-message-bubble-wrap">{message.role === 'assistant'
                 ? <StreamingMessageContent content={stripThinkBlocks(message.content)} jobId={message.job_id} streaming={streaming} />
                 : <MessageContent content={message.content} />}</div></div>
