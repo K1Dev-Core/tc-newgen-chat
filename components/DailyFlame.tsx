@@ -80,7 +80,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
       celebrationTimerRef.current = setTimeout(() => {
         celebrationTimerRef.current = null;
         setCelebration(null);
-      }, 3_000);
+      }, 2_000);
     };
 
     const acceptRow = (row: FlameRow, fromRealtime: boolean) => {
@@ -170,7 +170,7 @@ export function DailyFlame({ roomId, viewerId, supabase }: { roomId: string; vie
       <Flame size={15} fill="currentColor" strokeWidth={1.8} /><strong>{count}</strong>
       {wasFueledToday && <span className="daily-flame-fueled-by">· {flame?.today_fueled_name}</span>}
     </div>
-    {celebration && <div className="daily-flame-celebration" role="status" aria-live="assertive" key={celebration.key}>
+    {celebration && <div className="daily-flame-celebration" role="button" tabIndex={0} aria-label="ปิดการแสดงขอบคุณที่จุดไฟ" onClick={() => { if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current); celebrationTimerRef.current = null; setCelebration(null); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (celebrationTimerRef.current) clearTimeout(celebrationTimerRef.current); celebrationTimerRef.current = null; setCelebration(null); } }} key={celebration.key}>
       <div className="daily-flame-celebration-content">
         <DotLottieReact className="daily-flame-animation" src="/fire.lottie" autoplay loop aria-hidden="true" />
         <strong>ขอบคุณที่จุดไฟ</strong>
