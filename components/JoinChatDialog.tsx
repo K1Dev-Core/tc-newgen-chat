@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Dices, LoaderCircle, Sparkles, X } from 'lucide-react';
 import type { MemberProfile } from './ProfileDialog';
-import { ProfileChoice, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
+import { ProfileChoice, orderProfileChoices, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 const PIGEON_NAMES = [
@@ -40,8 +40,9 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
     setName(`พิราบ${randomItem(PIGEON_NAMES)}`);
     const cached = readProfileCatalogCache();
     if (cached?.length) {
-      setChoices(cached);
-      setAvatarUrl(randomItem(cached).imageUrl);
+      const ordered = orderProfileChoices(cached);
+      setChoices(ordered);
+      setAvatarUrl(randomItem(ordered).imageUrl);
       setLoading(false);
     }
     void fetch(`${PROFILE_CDN}/profiles/catalog.json`, { cache: 'force-cache' })
@@ -51,7 +52,7 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
       })
       .then((result) => {
         if (!alive) return;
-        const profiles = Array.isArray(result.data) ? result.data : [];
+        const profiles = orderProfileChoices(Array.isArray(result.data) ? result.data : []);
         setChoices(profiles);
         writeProfileCatalogCache(profiles);
         if (profiles.length && !cached?.length) setAvatarUrl(randomItem(profiles).imageUrl);

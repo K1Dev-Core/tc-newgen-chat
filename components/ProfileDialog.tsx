@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Check, LoaderCircle, LogOut, Sparkles, X } from 'lucide-react';
-import { ProfileChoice, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
+import { ProfileChoice, orderProfileChoices, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 
@@ -26,7 +26,7 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
     let alive = true;
     const cached = readProfileCatalogCache();
     if (cached?.length) {
-      setChoices(cached);
+      setChoices(orderProfileChoices(cached));
       setLoading(false);
     }
     void fetch(`${PROFILE_CDN}/profiles/catalog.json`, { cache: 'force-cache' })
@@ -36,8 +36,9 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
       })
       .then((result) => {
         if (!alive) return;
-        setChoices(result.data);
-        writeProfileCatalogCache(result.data);
+        const ordered = orderProfileChoices(result.data);
+        setChoices(ordered);
+        writeProfileCatalogCache(ordered);
       })
       .catch(() => { if (alive && !cached?.length) setLoadError('โหลดรายการรูปไม่สำเร็จ ลองเปิดหน้าต่างนี้อีกครั้ง'); })
       .finally(() => { if (alive) setLoading(false); });

@@ -1,4 +1,4 @@
-export type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string };
+export type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string; animated?: boolean };
 
 const CACHE_KEY = 'tc-profile-catalog-cache-v1';
 
@@ -23,4 +23,8 @@ export function writeProfileCatalogCache(choices: ProfileChoice[]) {
   } catch {
     // Storage may be disabled or full; the live catalog still works without it.
   }
+}
+
+export function orderProfileChoices(choices: ProfileChoice[]): ProfileChoice[] {
+  return [...choices].sort((a, b) => Number(Boolean(b.animated || /\.gif(?:$|\?)/i.test(b.imageUrl))) - Number(Boolean(a.animated || /\.gif(?:$|\?)/i.test(a.imageUrl))));
 }
