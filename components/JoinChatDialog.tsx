@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Dices, LoaderCircle, Sparkles, X } from 'lucide-react';
 import type { MemberProfile } from './ProfileDialog';
+import { ProfileChoice, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 const PIGEON_NAMES = [
@@ -20,7 +21,6 @@ const PIGEON_NAMES = [
   'หางพัด', 'คอเหลือบ', 'ขนเทา', 'จุดขาว', 'ปีกลาย', 'ยอดขุนพล', 'เจ้าสำราญ', 'จอมยุทธ์', 'ขุนแผนเวหา', 'ท่านขุนปีกทอง',
 ];
 
-type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string };
 const randomItem = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
 export function JoinChatDialog({ onClose, onJoin, saving = false }: {
@@ -38,7 +38,13 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
     let alive = true;
     // Give each new visitor a ready-to-use identity as soon as the dialog opens.
     setName(`พิราบ${randomItem(PIGEON_NAMES)}`);
-    void fetch(`${PROFILE_CDN}/api/profiles?limit=100`)
+    const cached = readProfileCatalogCache();
+    if (cached?.length) {
+      setChoices(cached);
+      setAvatarUrl(randomItem(cached).imageUrl);
+      setLoading(false);
+    }
+    void fetch(`${PROFILE_CDN}/profiles/catalog.json`, { cache: 'force-cache' })
       .then(async (response) => {
         if (!response.ok) throw new Error('โหลดรูปโปรไฟล์ไม่สำเร็จ');
         return response.json() as Promise<{ data: ProfileChoice[] }>;
@@ -47,10 +53,11 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
         if (!alive) return;
         const profiles = Array.isArray(result.data) ? result.data : [];
         setChoices(profiles);
-        if (profiles.length) setAvatarUrl(randomItem(profiles).imageUrl);
-        else setLoadError('ยังไม่มีรูปโปรไฟล์ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้');
+        writeProfileCatalogCache(profiles);
+        if (profiles.length && !cached?.length) setAvatarUrl(randomItem(profiles).imageUrl);
+        if (!profiles.length) setLoadError('ยังไม่มีรูปโปรไฟล์ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้');
       })
-      .catch(() => { if (alive) setLoadError('โหลดรายการรูปไม่สำเร็จ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้'); })
+      .catch(() => { if (alive && !cached?.length) setLoadError('โหลดรายการรูปไม่สำเร็จ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, []);

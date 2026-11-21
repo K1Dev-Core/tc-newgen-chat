@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { Check, LoaderCircle, LogOut, Sparkles, X } from 'lucide-react';
+import { ProfileChoice, readProfileCatalogCache, writeProfileCatalogCache } from './profileCatalogCache';
 
 const PROFILE_CDN = 'https://profile-image-cdn.vercel.app';
 
-type ProfileChoice = { id: string; name: string; description: string; imageUrl: string; alt: string };
 export type MemberProfile = { id: string; display_name: string; avatar_url: string | null };
 
 export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, saving = false }: {
@@ -24,13 +24,22 @@ export function ProfileDialog({ profile, editable, onClose, onSave, onSignOut, s
 
   useEffect(() => {
     let alive = true;
-    void fetch(`${PROFILE_CDN}/api/profiles?limit=100`)
+    const cached = readProfileCatalogCache();
+    if (cached?.length) {
+      setChoices(cached);
+      setLoading(false);
+    }
+    void fetch(`${PROFILE_CDN}/profiles/catalog.json`, { cache: 'force-cache' })
       .then(async (response) => {
         if (!response.ok) throw new Error('โหลดรูปโปรไฟล์ไม่สำเร็จ');
         return response.json() as Promise<{ data: ProfileChoice[] }>;
       })
-      .then((result) => { if (alive) setChoices(result.data); })
-      .catch(() => { if (alive) setLoadError('โหลดรายการรูปไม่สำเร็จ ลองเปิดหน้าต่างนี้อีกครั้ง'); })
+      .then((result) => {
+        if (!alive) return;
+        setChoices(result.data);
+        writeProfileCatalogCache(result.data);
+      })
+      .catch(() => { if (alive && !cached?.length) setLoadError('โหลดรายการรูปไม่สำเร็จ ลองเปิดหน้าต่างนี้อีกครั้ง'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, []);
