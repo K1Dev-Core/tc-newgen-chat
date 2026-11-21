@@ -36,12 +36,20 @@ export function JoinChatDialog({ onClose, onJoin, saving = false }: {
 
   useEffect(() => {
     let alive = true;
+    // Give each new visitor a ready-to-use identity as soon as the dialog opens.
+    setName(`พิราบ${randomItem(PIGEON_NAMES)}`);
     void fetch(`${PROFILE_CDN}/api/profiles?limit=100`)
       .then(async (response) => {
         if (!response.ok) throw new Error('โหลดรูปโปรไฟล์ไม่สำเร็จ');
         return response.json() as Promise<{ data: ProfileChoice[] }>;
       })
-      .then((result) => { if (alive) setChoices(result.data); })
+      .then((result) => {
+        if (!alive) return;
+        const profiles = Array.isArray(result.data) ? result.data : [];
+        setChoices(profiles);
+        if (profiles.length) setAvatarUrl(randomItem(profiles).imageUrl);
+        else setLoadError('ยังไม่มีรูปโปรไฟล์ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้');
+      })
       .catch(() => { if (alive) setLoadError('โหลดรายการรูปไม่สำเร็จ สามารถเข้าร่วมโดยใช้ตัวอักษรแทนรูปได้'); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
