@@ -542,13 +542,15 @@ function LiveGroupChat({ supabase }: { supabase: SupabaseClient }) {
     void supabase.from('messages')
       .select('id,sender_id,sender_name,content,created_at,reply_to_id')
       .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
+      // Fetch the newest page first, then render it oldest-to-newest below.
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(100)
       .then(async ({ data, error }) => {
         if (!alive) return;
         if (error) notify('โหลดประวัติแชตไม่สำเร็จ');
         if (data) {
-          const fetched = await hydrateMessageReplies(supabase, data as MessageRow[], user?.id);
+          const fetched = await hydrateMessageReplies(supabase, [...(data as MessageRow[])].reverse(), user?.id);
           if (!alive) return;
           setMessages((current) => {
             const merged = new Map(fetched.map((item) => [item.id, item]));
